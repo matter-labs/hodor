@@ -12,3 +12,9 @@ serde = "1.0.80"
 serde_derive = "1.0.80"
 serde_json = "1.0.33"
 hex = "0.3.2"
+tiny-keccak = "1.4.2"
+rust-crypto = "0.2"
+
+[dependencies.blake2-rfc]
+git = "https://github.com/gtank/blake2-rfc"
+rev = "7a5b5fc99ae483a0043db7547fb79a6fa44b88a9"

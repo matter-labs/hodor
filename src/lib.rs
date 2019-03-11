@@ -5,10 +5,13 @@ extern crate hex;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
+extern crate blake2_rfc;
+extern crate tiny_keccak;
+extern crate crypto;
 
-mod field;
 mod air;
 mod fri;
+pub mod utils;
 
 use ff::{Field, PrimeField, PrimeFieldDecodingError, PrimeFieldRepr};
 
