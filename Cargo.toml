@@ -14,6 +14,10 @@ serde_json = "1.0.33"
 hex = "0.3.2"
 tiny-keccak = "1.4.2"
 rust-crypto = "0.2"
+futures = "0.1"
+futures-cpupool = {version = "0.1"}
+num_cpus = {version = "1"}
+crossbeam = {version = "0.7.1"}
 
 [dependencies.blake2-rfc]
 git = "https://github.com/gtank/blake2-rfc"

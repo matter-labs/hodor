@@ -4,6 +4,7 @@ use crypto::sha2::Sha256;
 use crypto::digest::Digest;
 
 pub mod merkle_tree;
+pub mod poly;
 
 pub trait Hasher: Sized + Clone {
     fn new(personalization: &[u8]) -> Self;

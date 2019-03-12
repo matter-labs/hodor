@@ -10,8 +10,9 @@ extern crate tiny_keccak;
 extern crate crypto;
 
 mod air;
-mod fri;
+pub mod fri;
 pub mod utils;
+pub mod fft;
 
 use ff::{Field, PrimeField, PrimeFieldDecodingError, PrimeFieldRepr};
 
