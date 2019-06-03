@@ -1,9 +1,8 @@
-extern crate ff;
+extern crate ff_ce as ff;
 extern crate byteorder;
 extern crate rand;
 extern crate hex;
 extern crate serde;
-#[macro_use]
 extern crate serde_derive;
 extern crate blake2_rfc;
 extern crate tiny_keccak;
