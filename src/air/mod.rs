@@ -1,5 +1,9 @@
 mod test_trace_system;
 
+mod constraint;
+
+use constraint::*;
+
 use ff::{
     PrimeField,
 };
@@ -18,13 +22,33 @@ pub enum ConstraintDensity {
     Sparse(usize)
 }
 
-pub struct UnivariateConstraintTerm<F: PrimeField>(F, (Register, usize), u64); // coeff, register, power
-pub struct PolyvariateConstraintTerm<F: PrimeField>(F, Vec<UnivariateConstraintTerm<F>>); // coeff, terms
-pub struct PolynomialConstraint<F: PrimeField>(F, Vec<PolynomialConstraintTerm<F>>); // linera combination of terms
 
-pub enum PolynomialConstraintTerm<F: PrimeField> {
-    Univariate(UnivariateConstraintTerm<F>),
-    Polyvariate(PolyvariateConstraintTerm<F>)
+#[derive(Debug)]
+pub enum TracingError {
+    Error,
+}
+
+// impl From<io::Error> for SynthesisError {
+//     fn from(e: io::Error) -> SynthesisError {
+//         SynthesisError::IoError(e)
+//     }
+// }
+
+use std::fmt;
+use std::error::Error;
+
+impl Error for TracingError {
+    fn description(&self) -> &str {
+        match *self {
+            TracingError::Error => "General error for now",
+        }
+    }
+}
+
+impl fmt::Display for TracingError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        write!(f, "{}", self.description())
+    }
 }
 
 pub trait TraceSystem<F: PrimeField> {
@@ -32,39 +56,54 @@ pub trait TraceSystem<F: PrimeField> {
     fn allocate_register(
         &mut self, 
         name: String
-    ) -> Result<Register, String>;
+    ) -> Result<Register, TracingError>;
+    fn get_register(
+        &self,
+        step: usize,
+        register: Register
+    ) -> Result<F, TracingError>;
     // adds a new constant register
     fn allocate_constant_register<CWF>(
         &mut self, 
         name: String,
         f: CWF
-    ) -> Result<Register, String> where CWF: 'static + FnOnce(usize) -> Result<(F, bool), ()>;
+    ) -> Result<Register, TracingError> where CWF: 'static + FnOnce(usize) -> Result<(F, bool), TracingError>;
     // tries to get aux register
     fn get_aux_register(
         &mut self, 
         register: usize
-    ) -> Result<Register, String>;
+    ) -> Result<Register, TracingError>;
     // adds constraint and 
     fn add_constraint<WF>(
         &mut self, 
         step: usize, 
-        constraint: PolynomialConstraintTerm<F>, 
+        constraint: PolynomialConstraint<F>, 
         density: ConstraintDensity, 
         value: WF,
-    ) -> Result<(), String> where WF: 'static + FnOnce(Vec<(F, Register, usize)>) -> Result<Vec<(F, Register, usize)>, ()>;
+    ) -> Result<(), TracingError> where WF: 'static + FnOnce(Vec<(F, Register, usize)>) -> Result<Vec<(F, Register, usize)>, TracingError>;
+
+    fn add_constraint_with_witness<WF>(
+        &mut self, 
+        step: usize, 
+        constraint: PolynomialConstraint<F>, 
+        density: ConstraintDensity, 
+        value: WF,
+    ) -> Result<(), TracingError> where WF: 'static + Fn(&Self) -> Result<Vec<(F, Register, usize)>, TracingError>;
+    
     fn add_boundary_constraint(
         &mut self, 
         name: String,
         register: Register, 
         step: usize
-    ) -> Result<(), String>;
+    ) -> Result<(), TracingError>;
 
-    fn step(&mut self, num_steps: usize) -> Result<(), String>;
+    fn step(&mut self, num_steps: usize) -> Result<(), TracingError>;
+    fn get_step_number(&self) -> Result<usize, TracingError>;
     // fn finalize(&mut self) -> Result<(), String>;
 }
 
 
 pub trait IntoAIR {
-    fn trace<F: PrimeField, TC: TraceSystem<F>>(self, tracer: &mut TC) -> Result<(), ()>;
+    fn trace<F: PrimeField, TC: TraceSystem<F>>(self, tracer: &mut TC) -> Result<(), TracingError>;
 }
 
