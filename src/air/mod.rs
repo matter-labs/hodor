@@ -22,17 +22,10 @@ pub enum ConstraintDensity {
     Sparse(usize)
 }
 
-
 #[derive(Debug)]
 pub enum TracingError {
     Error,
 }
-
-// impl From<io::Error> for SynthesisError {
-//     fn from(e: io::Error) -> SynthesisError {
-//         SynthesisError::IoError(e)
-//     }
-// }
 
 use std::fmt;
 use std::error::Error;
@@ -76,17 +69,13 @@ pub trait TraceSystem<F: PrimeField> {
     // adds constraint and 
     fn add_constraint<WF>(
         &mut self, 
-        step: usize, 
-        constraint: PolynomialConstraint<F>, 
-        density: ConstraintDensity, 
+        constraint: Constraint<F>, 
         value: WF,
     ) -> Result<(), TracingError> where WF: 'static + FnOnce(Vec<(F, Register, usize)>) -> Result<Vec<(F, Register, usize)>, TracingError>;
 
     fn add_constraint_with_witness<WF>(
         &mut self, 
-        step: usize, 
-        constraint: PolynomialConstraint<F>, 
-        density: ConstraintDensity, 
+        constraint: Constraint<F>, 
         value: WF,
     ) -> Result<(), TracingError> where WF: 'static + Fn(&Self) -> Result<Vec<(F, Register, usize)>, TracingError>;
     
@@ -94,8 +83,8 @@ pub trait TraceSystem<F: PrimeField> {
         &mut self, 
         name: String,
         register: Register, 
-        step: usize,
-        value: F,
+        at_step: usize,
+        value: Option<F>,
     ) -> Result<(), TracingError>;
 
     fn step(&mut self, num_steps: usize) -> Result<(), TracingError>;

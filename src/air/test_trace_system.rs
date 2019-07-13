@@ -14,8 +14,8 @@ pub struct TestTraceSystem<F: PrimeField> {
     witness_generators: Vec<Box<Fn(&Self) -> Result<Vec<(F, Register, usize)>, TracingError> > >,
     constant_register_generators: Vec<Box<FnOnce(usize) -> Result<(F, bool), TracingError> > >,
     pub aux_registers_witness: Vec<Vec<F>>,
-    pub constraints: Vec<(usize, PolynomialConstraint<F>, ConstraintDensity)>,
-    pub boundary_constraints: Vec<(Register, usize, F)>,
+    pub constraints: Vec<Constraint<F>>,
+    pub boundary_constraints: Vec<BoundaryConstraint<F>>,
     pub current_step: usize
 }
 
@@ -85,13 +85,11 @@ impl<F: PrimeField> TraceSystem<F> for TestTraceSystem<F> {
     }
     fn add_constraint<WF>(
         &mut self, 
-        step: usize, 
-        constraint: PolynomialConstraint<F>, 
-        density: ConstraintDensity, 
+        constraint: Constraint<F>, 
         value: WF,
     ) -> Result<(), TracingError> where WF: 'static + FnOnce(Vec<(F, Register, usize)>) -> Result<Vec<(F, Register, usize)>, TracingError>
     {
-        self.constraints.push((step, constraint, density));
+        self.constraints.push(constraint);
         self.register_generators.push(Box::new(value));
 
         Ok(())
@@ -99,12 +97,10 @@ impl<F: PrimeField> TraceSystem<F> for TestTraceSystem<F> {
 
     fn add_constraint_with_witness<WF>(
         &mut self, 
-        step: usize, 
-        constraint: PolynomialConstraint<F>, 
-        density: ConstraintDensity, 
+        constraint: Constraint<F>, 
         value: WF,
     ) -> Result<(), TracingError> where WF: 'static + Fn(&Self) -> Result<Vec<(F, Register, usize)>, TracingError> {
-        self.constraints.push((step, constraint, density));
+        self.constraints.push(constraint);
         self.witness_generators.push(Box::new(value));
 
         Ok(())
@@ -114,11 +110,16 @@ impl<F: PrimeField> TraceSystem<F> for TestTraceSystem<F> {
         &mut self, 
         _name: String,
         register: Register, 
-        step: usize,
-        value: F
+        at_step: usize,
+        value: Option<F>
     ) -> Result<(), TracingError>
     {
-        self.boundary_constraints.push((register, step, value));
+        let constraint = BoundaryConstraint::<F> {
+            register: register,
+            at_step: at_step,
+            value: value
+        };
+        self.boundary_constraints.push(constraint);
 
         Ok(())
     }
@@ -169,12 +170,36 @@ impl<F: PrimeField> IntoAIR<F> for Fibonacci<F> {
             Ok(vec![(new_value, b_register, 1)])
         };
 
-        let mut fib_constraint_0 = PolynomialConstraint::default();
-        let mut fib_constraint_1 = PolynomialConstraint::default();
-        let a_register_now = UnivariateConstraintTerm(F::one(), (a_register, 0), 1);
-        let b_register_now = UnivariateConstraintTerm(F::one(), (b_register, 0), 1);
-        let a_next_step = UnivariateConstraintTerm(F::one(), (a_register, 1), 1);
-        let b_next_step = UnivariateConstraintTerm(F::one(), (b_register, 1), 1);
+        let mut fib_constraint_0 = Constraint::default();
+        fib_constraint_0.start_at = 0;
+        fib_constraint_0.density = ConstraintDensity::Dense;
+        let mut fib_constraint_1 = Constraint::default();
+        fib_constraint_1.start_at = 0;
+        fib_constraint_1.density = ConstraintDensity::Dense;
+        let a_register_now = UnivariateTerm::<F> {
+            coeff: F::one(),
+            register: a_register,
+            steps_difference: StepDifference::Steps(0),
+            power: 1
+        };
+        let b_register_now = UnivariateTerm::<F> {
+            coeff: F::one(),
+            register: b_register,
+            steps_difference: StepDifference::Steps(0),
+            power: 1
+        };
+        let a_next_step = UnivariateTerm::<F> {
+            coeff: F::one(),
+            register: a_register,
+            steps_difference: StepDifference::Steps(1),
+            power: 1
+        };
+        let b_next_step = UnivariateTerm::<F> {
+            coeff: F::one(),
+            register: b_register,
+            steps_difference: StepDifference::Steps(1),
+            power: 1
+        };
         // constraint for registed a_new = b;
         fib_constraint_0 += b_register_now.clone(); 
         fib_constraint_0 -= a_next_step;
@@ -183,8 +208,8 @@ impl<F: PrimeField> IntoAIR<F> for Fibonacci<F> {
         fib_constraint_1 += b_register_now; 
         fib_constraint_1 -= b_next_step;
 
-        tracer.add_constraint_with_witness(0, fib_constraint_0, ConstraintDensity::Dense, witness_derivation_function_0)?;
-        tracer.add_constraint_with_witness(0, fib_constraint_1, ConstraintDensity::Dense, witness_derivation_function_1)?;
+        tracer.add_constraint_with_witness(fib_constraint_0, witness_derivation_function_0)?;
+        tracer.add_constraint_with_witness(fib_constraint_1, witness_derivation_function_1)?;
 
 
         if self.final_a.is_some() {
@@ -197,9 +222,9 @@ impl<F: PrimeField> IntoAIR<F> for Fibonacci<F> {
             let initial_b = F::one();
             let final_a = F::from_str(&final_a.to_string()).unwrap();
 
-            tracer.add_boundary_constraint("Initial A".to_string(), a_register, 0, initial_a)?;
-            tracer.add_boundary_constraint("Initial B".to_string(), b_register, 0, initial_b)?;
-            tracer.add_boundary_constraint("Final A".to_string(), a_register, at_step, final_a)?;
+            tracer.add_boundary_constraint("Initial A".to_string(), a_register, 0, Some(initial_a))?;
+            tracer.add_boundary_constraint("Initial B".to_string(), b_register, 0, Some(initial_b))?;
+            tracer.add_boundary_constraint("Final A".to_string(), a_register, at_step, Some(final_a))?;
         }
 
         Ok(())

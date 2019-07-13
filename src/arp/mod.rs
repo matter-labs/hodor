@@ -1,4 +1,4 @@
-use crate::air::{Register, PolynomialConstraint, ConstraintDensity, PolynomialConstraintTerm, PolyvariateConstraintTerm, UnivariateConstraintTerm};
+use crate::air::*;
 use crate::air::TestTraceSystem;
 use ff::PrimeField;
 
@@ -6,19 +6,31 @@ mod prime_field_arp;
 
 pub use prime_field_arp::*;
 
+// ARP works with remapped registers and no longer cares about their meaning
+pub struct ARP<F:PrimeField> {
+    pub witness: Option<Vec<Vec<F>>>,
+    pub num_steps: usize,
+    pub num_registers: usize,
+    pub constraints: Vec<Constraint<F>>,
+    pub boundary_constraints: Vec<BoundaryConstraint<F>>
+}
+
 pub trait IntoARP<F: PrimeField> {
     // return full trace, trace constraints and boundary constraints
     // registers should be remapped to have uniform structure, so ARP knows nothing about
     // what is a meaning of particular register
-    fn into_arp(self) -> (Vec<Vec<F>>, Vec<(usize, PolynomialConstraint<F>, ConstraintDensity)>, Vec<(Register, usize, F)>);
+    fn into_arp(self) -> ARP<F>;
 }
 
 impl<F: PrimeField> IntoARP<F> for TestTraceSystem<F> {
-    fn into_arp(self) -> (Vec<Vec<F>>, Vec<(usize, PolynomialConstraint<F>, ConstraintDensity)>, Vec<(Register, usize, F)>) {
+    fn into_arp(self) -> ARP<F> {
         let num_pc_registers = self.pc_registers.len();
         let num_registers = self.registers.len();
         let num_aux_registers = self.aux_registers.len();
         let num_constant_registers = self.constant_registers.len();
+
+        let total_registers = num_pc_registers + num_registers + num_aux_registers + num_constant_registers;
+        let num_steps = self.current_step;
 
         let register_remap_constant = num_pc_registers;
         let aux_register_remap_constant = register_remap_constant + num_registers;
@@ -26,7 +38,7 @@ impl<F: PrimeField> IntoARP<F> for TestTraceSystem<F> {
 
         let mut witness = vec![];
 
-        fn remap(
+        fn remap_register(
             register: Register, 
             register_remap_constant: usize, 
             aux_register_remap_constant: usize, 
@@ -51,76 +63,82 @@ impl<F: PrimeField> IntoARP<F> for TestTraceSystem<F> {
         }
 
         fn remap_univariate_term<F: PrimeField>(
-            term: UnivariateConstraintTerm<F>,
+            term: &mut UnivariateTerm<F>,
             register_remap_constant: usize, 
             aux_register_remap_constant: usize, 
             constant_register_remap_constant: usize
-        ) -> UnivariateConstraintTerm<F> {
-            let UnivariateConstraintTerm(c, reg, power) = term;
-            let (reg, time_step) = reg;
-            let reg = remap(reg, register_remap_constant, aux_register_remap_constant, constant_register_remap_constant);
-            UnivariateConstraintTerm(c, (reg, time_step), power)
+        ) {
+            term.register = remap_register(
+                term.register,
+                register_remap_constant,
+                aux_register_remap_constant, 
+                constant_register_remap_constant
+            );
         }
 
         fn remap_term<F: PrimeField>(
-            term: PolynomialConstraintTerm<F>,
+            term: &mut ConstraintTerm<F>,
             register_remap_constant: usize, 
             aux_register_remap_constant: usize, 
             constant_register_remap_constant: usize
-        ) -> PolynomialConstraintTerm<F> {
-            let remapped = match term {
-                PolynomialConstraintTerm::Univariate(uni_term) => {
-                    PolynomialConstraintTerm::Univariate(
+        ) {
+            match term {
+                ConstraintTerm::Univariate(ref mut t) => {
+                    remap_univariate_term(
+                        t, 
+                        register_remap_constant, 
+                        aux_register_remap_constant, 
+                        constant_register_remap_constant
+                    );
+                },
+                ConstraintTerm::Polyvariate(ref mut poly_term) => {
+                    for mut t in poly_term.terms.iter_mut() {
                         remap_univariate_term(
-                            uni_term, 
+                            &mut t, 
                             register_remap_constant, 
                             aux_register_remap_constant, 
                             constant_register_remap_constant
-                        )
-                    )
-                },
-                PolynomialConstraintTerm::Polyvariate(poly_term) => {
-                    let PolyvariateConstraintTerm(coeff, terms) = poly_term;
-                    let terms: Vec<_> = terms.into_iter().map(|t| 
-                        remap_univariate_term(t, register_remap_constant, aux_register_remap_constant, constant_register_remap_constant)
-                    ).collect();
-
-                    PolynomialConstraintTerm::Polyvariate(
-                        PolyvariateConstraintTerm(coeff, terms)
-                    )
+                        );
+                    }
                 }
-            };
-
-            remapped
+            }
         }
 
         fn remap_constraint<F: PrimeField>(
-            constraint: PolynomialConstraint<F>,
+            constraint: &mut Constraint<F>,
             register_remap_constant: usize, 
             aux_register_remap_constant: usize, 
             constant_register_remap_constant: usize
-        ) -> PolynomialConstraint<F> {
-            let PolynomialConstraint(coeff, terms) = constraint;
-            let terms: Vec<_> = terms.into_iter().map(|t| 
-                remap_term(t, register_remap_constant, aux_register_remap_constant, constant_register_remap_constant)
-            ).collect();
-
-            PolynomialConstraint(coeff, terms)
+        ) {
+            for mut t in constraint.terms.iter_mut() {
+                remap_term(
+                    &mut t, 
+                    register_remap_constant, 
+                    aux_register_remap_constant, 
+                    constant_register_remap_constant);
+            }
         }
 
-        let constraints: Vec<_> = self.constraints.into_iter().map(|(step, c, density)| 
-        {
-            let c = remap_constraint(c, register_remap_constant, aux_register_remap_constant, constant_register_remap_constant);
+        let mut constraints = self.constraints;
 
-            (step, c, density)
-        }).collect();
+        for mut c in constraints.iter_mut() {
+            remap_constraint(
+                &mut c, 
+                register_remap_constant, 
+                aux_register_remap_constant, 
+                constant_register_remap_constant
+            );
+        }   
 
-        let boundary_constraints: Vec<_> = self.boundary_constraints.into_iter().map(|(reg, step, value)| 
-        {
-            let reg = remap(reg, register_remap_constant, aux_register_remap_constant, constant_register_remap_constant);
-
-            (reg, step, value)
-        }).collect();
+        let mut boundary_constraints = self.boundary_constraints;
+        for c in boundary_constraints.iter_mut() {
+            c.register = remap_register(
+                c.register, 
+                register_remap_constant, 
+                aux_register_remap_constant, 
+                constant_register_remap_constant
+            );
+        }   
 
         for r in self.pc_registers_witness.into_iter() {
             if r.len() != 0 {
@@ -146,8 +164,20 @@ impl<F: PrimeField> IntoARP<F> for TestTraceSystem<F> {
             }
         }
 
-        assert_eq!(witness.len(), num_pc_registers + num_registers + num_aux_registers + num_constant_registers);
+        assert_eq!(witness.len(), total_registers);
 
-        (witness, constraints, boundary_constraints)
+        let witness = if witness.len() == 0 {
+            None
+        } else {
+            Some(witness)
+        };
+
+        ARP::<F> {
+            witness,
+            num_steps,
+            num_registers,
+            constraints,
+            boundary_constraints,
+        }
     }
 }
