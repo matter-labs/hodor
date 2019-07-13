@@ -1,8 +1,8 @@
 mod test_trace_system;
-
 mod constraint;
 
 pub use constraint::*;
+pub use test_trace_system::*;
 
 use ff::{
     PrimeField,

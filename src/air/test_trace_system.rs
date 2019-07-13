@@ -3,20 +3,20 @@ use super::*;
 use std::ops::{AddAssign, SubAssign, MulAssign};
 
 pub struct TestTraceSystem<F: PrimeField> {
-    pc_registers: Vec<String>,
-    registers: Vec<String>,
-    constant_registers: Vec<String>,
-    aux_registers: usize,
-    pc_registers_witness: Vec<Vec<F>>,
-    registers_witness: Vec<Vec<F>>,
-    constant_registers_witness: Vec<Vec<F>>,
+    pub pc_registers: Vec<String>,
+    pub registers: Vec<String>,
+    pub constant_registers: Vec<String>,
+    pub aux_registers: Vec<String>,
+    pub pc_registers_witness: Vec<Vec<F>>,
+    pub registers_witness: Vec<Vec<F>>,
+    pub constant_registers_witness: Vec<Vec<F>>,
     register_generators: Vec<Box<FnOnce(Vec<(F, Register, usize)>) -> Result<Vec<(F, Register, usize)>, TracingError> > >,
     witness_generators: Vec<Box<Fn(&Self) -> Result<Vec<(F, Register, usize)>, TracingError> > >,
     constant_register_generators: Vec<Box<FnOnce(usize) -> Result<(F, bool), TracingError> > >,
-    aux_registers_witness: Vec<Vec<F>>,
-    constraints: Vec<(usize, PolynomialConstraint<F>, ConstraintDensity)>,
-    boundary_constraints: Vec<(Register, usize, F)>,
-    current_step: usize
+    pub aux_registers_witness: Vec<Vec<F>>,
+    pub constraints: Vec<(usize, PolynomialConstraint<F>, ConstraintDensity)>,
+    pub boundary_constraints: Vec<(Register, usize, F)>,
+    pub current_step: usize
 }
 
 
@@ -77,12 +77,11 @@ impl<F: PrimeField> TraceSystem<F> for TestTraceSystem<F> {
         register: usize
     ) -> Result<Register, TracingError>
     {
-        if register >= self.aux_registers {
-            self.aux_registers = register - 1;
-            self.aux_registers_witness.resize(register, vec![]);
-        }
+        let num_registers = self.aux_registers.len();
+        self.aux_registers.push(format!("Aux({})", num_registers));
+        self.aux_registers_witness.push(vec![]);
 
-        Ok(Register::Aux(register))
+        Ok(Register::Aux(num_registers))
     }
     fn add_constraint<WF>(
         &mut self, 
@@ -139,12 +138,12 @@ impl<F: PrimeField> TraceSystem<F> for TestTraceSystem<F> {
 } 
 
 
-struct Fibonacci<F: PrimeField> {
-    first_a: Option<u64>,
-    first_b: Option<u64>,
-    final_a: Option<u64>,
-    at_step: Option<usize>,
-    _marker: std::marker::PhantomData<F>
+pub(crate) struct Fibonacci<F: PrimeField> {
+    pub(crate) first_a: Option<u64>,
+    pub(crate) first_b: Option<u64>,
+    pub(crate) final_a: Option<u64>,
+    pub(crate) at_step: Option<usize>,
+    pub(crate) _marker: std::marker::PhantomData<F>
 }
 
 impl<F: PrimeField> IntoAIR<F> for Fibonacci<F> {
@@ -208,12 +207,12 @@ impl<F: PrimeField> IntoAIR<F> for Fibonacci<F> {
 }
 
 impl<F: PrimeField> TestTraceSystem<F> {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             pc_registers: vec![],
             registers: vec![],
             constant_registers: vec![],
-            aux_registers: 0,
+            aux_registers: vec![],
             pc_registers_witness: vec![vec![]],
             registers_witness: vec![vec![]],
             constant_registers_witness: vec![vec![]],
@@ -226,8 +225,8 @@ impl<F: PrimeField> TestTraceSystem<F> {
             current_step: 0
         }
     }
-    
-    fn calculate_witness(&mut self, a: u64, b: u64, steps: usize) {
+
+    pub(crate) fn calculate_witness(&mut self, a: u64, b: u64, steps: usize) {
         let a0 = F::from_str("1").unwrap();
         let b0 = F::from_str("1").unwrap();
 
@@ -273,6 +272,6 @@ fn test_fib() {
     };
 
     let mut test_tracer = TestTraceSystem::<Fr>::new();
-    fib.trace(&mut test_tracer);
+    fib.trace(&mut test_tracer).expect("should work");
     test_tracer.calculate_witness(1, 1, 5);
 }
