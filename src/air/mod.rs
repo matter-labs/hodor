@@ -2,7 +2,7 @@ mod test_trace_system;
 
 mod constraint;
 
-use constraint::*;
+pub use constraint::*;
 
 use ff::{
     PrimeField,
@@ -94,7 +94,8 @@ pub trait TraceSystem<F: PrimeField> {
         &mut self, 
         name: String,
         register: Register, 
-        step: usize
+        step: usize,
+        value: F,
     ) -> Result<(), TracingError>;
 
     fn step(&mut self, num_steps: usize) -> Result<(), TracingError>;
@@ -103,7 +104,7 @@ pub trait TraceSystem<F: PrimeField> {
 }
 
 
-pub trait IntoAIR {
-    fn trace<F: PrimeField, TC: TraceSystem<F>>(self, tracer: &mut TC) -> Result<(), TracingError>;
+pub trait IntoAIR<F: PrimeField> {
+    fn trace<TC: TraceSystem<F>>(self, tracer: &mut TC) -> Result<(), TracingError>;
 }
 
