@@ -30,7 +30,7 @@ pub enum ConstraintTerm<F: PrimeField> {
     Polyvariate(PolyvariateTerm<F>)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct UnivariateTerm<F: PrimeField>{
     pub coeff: F,
     pub register: Register,

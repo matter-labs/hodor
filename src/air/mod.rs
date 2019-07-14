@@ -8,7 +8,7 @@ use ff::{
     PrimeField,
 };
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum Register {
     ProgramCounter(usize),
     Register(usize),

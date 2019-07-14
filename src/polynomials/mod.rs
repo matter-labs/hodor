@@ -4,18 +4,18 @@ use crate::SynthesisError;
 use crate::fft::multicore::*;
 use crate::fft::fft::*;
 
-pub trait PolynomialForm: Sized {}
+pub trait PolynomialForm: Sized + Copy + Clone {}
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum Coefficients { }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum Values { }
 
 impl PolynomialForm for Coefficients {}
 impl PolynomialForm for Values{}
 
-#[derive(Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Polynomial<F: PrimeField, P: PolynomialForm> {
     coeffs: Vec<F>,
     exp: u32,
@@ -57,6 +57,13 @@ impl<F: PrimeField, P: PolynomialForm> Polynomial<F, P> {
 }
 
 impl<F: PrimeField> Polynomial<F, Coefficients> {
+    pub fn new_for_size(size: usize) -> Result<Polynomial<F, Coefficients>, SynthesisError> {
+        let coeffs = vec![F::zero(); size];
+
+        Self::from_coeffs(coeffs)
+    }
+
+
     pub fn from_coeffs(mut coeffs: Vec<F>) -> Result<Polynomial<F, Coefficients>, SynthesisError>
     {
         let coeffs_len = coeffs.len();
@@ -175,6 +182,12 @@ impl<F: PrimeField> Polynomial<F, Coefficients> {
 
 
 impl<F: PrimeField> Polynomial<F, Values> {
+    pub fn new_for_size(size: usize) -> Result<Polynomial<F, Values>, SynthesisError> {
+        let coeffs = vec![F::zero(); size];
+
+        Self::from_values(coeffs)
+    }
+
     pub fn from_values(mut values: Vec<F>) -> Result<Polynomial<F, Values>, SynthesisError>
     {
         let coeffs_len = values.len();

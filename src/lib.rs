@@ -15,6 +15,7 @@ pub mod utils;
 pub mod fft;
 pub mod domains;
 pub mod polynomials;
+pub mod ali;
 
 use ff::{Field, PrimeField, PrimeFieldRepr};
 

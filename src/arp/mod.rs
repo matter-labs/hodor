@@ -17,6 +17,7 @@ pub struct ARP<F:PrimeField> {
     pub boundary_constraints: Vec<BoundaryConstraint<F>>
 }
 
+
 pub enum WitnessPolynomial<F: PrimeField> {
     Single(Polynomial<F, Coefficients>),
     PerRegister(Vec<Polynomial<F, Coefficients>>),
