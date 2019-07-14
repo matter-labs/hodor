@@ -54,6 +54,42 @@ impl<F: PrimeField, P: PolynomialForm> Polynomial<F, P> {
             }
         });
     }
+
+    pub fn scale(&mut self, worker: &Worker, g: F)
+    {
+        worker.scope(self.coeffs.len(), |scope, chunk| {
+            for v in self.coeffs.chunks_mut(chunk) {
+                scope.spawn(move |_| {
+                    for v in v.iter_mut() {
+                        v.mul_assign(&g);
+                    }
+                });
+            }
+        });
+    }
+
+    // TODO: implement fancier FFT and implement separate LDE functionality
+    pub fn extend(&mut self, factor: usize) -> Result<(), SynthesisError> {
+        if factor == 1 {
+            return Ok(());
+        }
+        let next_power_of_two = factor.next_power_of_two();
+        if factor != next_power_of_two {
+            return Err(SynthesisError::Error);
+        }
+
+        let new_size = self.coeffs.len() * factor;
+        self.coeffs.resize(new_size, F::zero());
+
+        let domain = Domain::new_for_size(new_size as u64)?;
+        self.exp = domain.power_of_two as u32;
+        let m = domain.size as usize;
+        self.omega = domain.generator;
+        self.omegainv = self.omega.inverse().unwrap();
+        self.minv = F::from_str(&format!("{}", m)).unwrap().inverse().unwrap();
+
+        Ok(())
+    }
 }
 
 impl<F: PrimeField> Polynomial<F, Coefficients> {
@@ -135,22 +171,7 @@ impl<F: PrimeField> Polynomial<F, Coefficients> {
         });
     }
 
-    /// Perform O(n) multiplication of two polynomials in the domain.
-    pub fn mul_assign(&mut self, worker: &Worker, other: &Polynomial<F, Values>) {
-        assert_eq!(self.coeffs.len(), other.coeffs.len());
-
-        worker.scope(self.coeffs.len(), |scope, chunk| {
-            for (a, b) in self.coeffs.chunks_mut(chunk).zip(other.coeffs.chunks(chunk)) {
-                scope.spawn(move |_| {
-                    for (a, b) in a.iter_mut().zip(b.iter()) {
-                        a.mul_assign(&b);
-                    }
-                });
-            }
-        });
-    }
-
-    pub fn add_assign(&mut self, worker: &Worker, other: &Polynomial<F, Values>) {
+    pub fn add_assign(&mut self, worker: &Worker, other: &Polynomial<F, Coefficients>) {
         assert_eq!(self.coeffs.len(), other.coeffs.len());
 
         worker.scope(self.coeffs.len(), |scope, chunk| {
@@ -165,7 +186,7 @@ impl<F: PrimeField> Polynomial<F, Coefficients> {
     }
 
     /// Perform O(n) subtraction of one polynomial from another in the domain.
-    pub fn sub_assign(&mut self, worker: &Worker, other: &Polynomial<F, Values>) {
+    pub fn sub_assign(&mut self, worker: &Worker, other: &Polynomial<F, Coefficients>) {
         assert_eq!(self.coeffs.len(), other.coeffs.len());
 
         worker.scope(self.coeffs.len(), |scope, chunk| {
@@ -246,7 +267,7 @@ impl<F: PrimeField> Polynomial<F, Values> {
         res
     }
 
-    pub fn add_assign(&mut self, worker: &Worker, other: &Polynomial<F, Coefficients>) {
+    pub fn add_assign(&mut self, worker: &Worker, other: &Polynomial<F, Values>) {
         assert_eq!(self.coeffs.len(), other.coeffs.len());
 
         worker.scope(self.coeffs.len(), |scope, chunk| {
@@ -261,7 +282,7 @@ impl<F: PrimeField> Polynomial<F, Values> {
     }
 
     /// Perform O(n) subtraction of one polynomial from another in the domain.
-    pub fn sub_assign(&mut self, worker: &Worker, other: &Polynomial<F, Coefficients>) {
+    pub fn sub_assign(&mut self, worker: &Worker, other: &Polynomial<F, Values>) {
         assert_eq!(self.coeffs.len(), other.coeffs.len());
 
         worker.scope(self.coeffs.len(), |scope, chunk| {
@@ -269,6 +290,21 @@ impl<F: PrimeField> Polynomial<F, Values> {
                 scope.spawn(move |_| {
                     for (a, b) in a.iter_mut().zip(b.iter()) {
                         a.sub_assign(&b);
+                    }
+                });
+            }
+        });
+    }
+
+    /// Perform O(n) multiplication of two polynomials in the domain.
+    pub fn mul_assign(&mut self, worker: &Worker, other: &Polynomial<F, Values>) {
+        assert_eq!(self.coeffs.len(), other.coeffs.len());
+
+        worker.scope(self.coeffs.len(), |scope, chunk| {
+            for (a, b) in self.coeffs.chunks_mut(chunk).zip(other.coeffs.chunks(chunk)) {
+                scope.spawn(move |_| {
+                    for (a, b) in a.iter_mut().zip(b.iter()) {
+                        a.mul_assign(&b);
                     }
                 });
             }

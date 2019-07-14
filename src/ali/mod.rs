@@ -4,6 +4,8 @@ use crate::arp::WitnessPolynomial;
 use crate::arp::ARP;
 use crate::air::*;
 use crate::fft::multicore::Worker;
+use crate::SynthesisError;
+use crate::domains::*;
 
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
@@ -25,6 +27,11 @@ impl<F: PrimeField> Hash for StepDifference<F> {
 pub struct ALI<F: PrimeField> {
     pub f_poly: WitnessPolynomial<F>,
     pub g_poly: Polynomial<F, Values>,
+    pub num_steps: usize,
+    pub num_registers: usize,
+    pub constraints: Vec<Constraint<F>>,
+    pub boundary_constraints: Vec<BoundaryConstraint<F>>,
+    mask_applied_polynomials: HashMap::<StepDifference<F>, Polynomial<F, Coefficients>>
 }
 
 impl<F: PrimeField> From<ARP<F>> for ALI<F> {
@@ -117,8 +124,100 @@ impl<F: PrimeField> From<ARP<F>> for ALI<F> {
 
         ALI::<F> {
             f_poly: f,
-            g_poly: g_poly
+            g_poly: g_poly,
+            num_steps: arp.num_steps,
+            num_registers: arp.num_registers,
+            constraints: arp.constraints,
+            boundary_constraints: arp.boundary_constraints,
+            mask_applied_polynomials: mask_applied_polynomials
         }
+    }
+}
+
+impl<F: PrimeField> ALI<F> {
+    pub fn calculate_g(&mut self, alpha: F) -> Result<(), SynthesisError> {
+        let subterm = self.g_poly.clone();
+        let mut current_coeff = F::one();
+        let generator = F::multiplicative_generator();
+        let column_domain = Domain::<F>::new_for_size(self.num_steps as u64)?;
+
+        fn evaluate_constraint_term<F: PrimeField>(
+            term: &ConstraintTerm<F>,
+            substituted_witness: &HashMap::<StepDifference<F>, Polynomial<F, Coefficients>>,
+            worker: &Worker
+        ) -> Result<Polynomial<F, Values>, SynthesisError>
+        {
+            let result = match term {
+                ConstraintTerm::Univariate(uni) => {
+                    let mut base = substituted_witness.get(&uni.steps_difference).expect("should exist").clone();
+                    let scaling_factor = uni.power.next_power_of_two() as usize;
+                    base.extend(scaling_factor)?;
+                    if uni.coeff != F::one() {
+                        base.scale(&worker, uni.coeff);
+                    }
+                    let base = base.fft(&worker);
+
+                    base
+                },
+                ConstraintTerm::Polyvariate(_poly) => {
+                    unimplemented!();
+                }
+            };
+
+            Ok(result)
+        }
+
+        let worker = Worker::new();
+
+        for constraint in self.constraints.iter() {
+            current_coeff.mul_assign(&alpha);
+            // first we need to calculate denominator at the value
+            let demonimator = match constraint.density {
+                ConstraintDensity::Dense => {
+                    let start_at = constraint.start_at;
+                    let constraint_roots_generator = column_domain.generator;
+                    let mut root = constraint_roots_generator.pow([start_at as u64]);
+                    let mut result = F::one();
+                    for _ in start_at..self.num_steps {
+                        let mut term = generator;
+                        term.sub_assign(&root);
+                        result.mul_assign(&term);
+                        root.mul_assign(&constraint_roots_generator);
+                    }
+
+                    result
+                },
+                _ => {
+                    unimplemented!();
+                }
+            };
+
+            let demonimator = demonimator.inverse().expect("is non-zero");
+
+            let mut subterm = subterm.clone();
+
+            for term in constraint.terms.iter() {
+                let mut evaluated_term = evaluate_constraint_term(
+                    &term, 
+                    &self.mask_applied_polynomials,
+                    &worker
+                )?;
+
+                let factor = subterm.as_ref().len() / evaluated_term.as_ref().len();
+
+                evaluated_term.extend(factor)?;
+
+                subterm.add_assign(&worker, &evaluated_term);
+            }
+
+            let mut alpha_by_demon = demonimator;
+            alpha_by_demon.mul_assign(&current_coeff);
+            subterm.scale(&worker, alpha_by_demon);
+
+            self.g_poly.add_assign(&worker, &subterm);
+        }
+
+        Ok(())
     }
 }
 
@@ -145,5 +244,7 @@ fn test_fib_conversion() {
     let mut arp = ARP::<Fr>::new(test_tracer);
     arp.route_into_single_witness_poly().expect("must work");
 
-    let ali = ALI::from(arp);
+    let mut ali = ALI::from(arp);
+    let alpha = Fr::from_str("3").unwrap();
+    ali.calculate_g(alpha).expect("must work");
 }
