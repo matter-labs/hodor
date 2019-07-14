@@ -1,7 +1,3 @@
 pub(crate) mod multicore;
-
-// mod worker {
-//     use self::multicore::*;
-// }
-
+pub(crate) mod fft;
 pub mod radix2_domain;

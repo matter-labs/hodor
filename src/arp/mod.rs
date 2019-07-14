@@ -1,5 +1,6 @@
 use crate::air::*;
 use crate::air::TestTraceSystem;
+use crate::polynomials::*;
 use ff::PrimeField;
 
 mod prime_field_arp;
@@ -9,10 +10,16 @@ pub use prime_field_arp::*;
 // ARP works with remapped registers and no longer cares about their meaning
 pub struct ARP<F:PrimeField> {
     pub witness: Option<Vec<Vec<F>>>,
+    pub witness_poly: Option<WitnessPolynomial<F>>,
     pub num_steps: usize,
     pub num_registers: usize,
     pub constraints: Vec<Constraint<F>>,
     pub boundary_constraints: Vec<BoundaryConstraint<F>>
+}
+
+pub enum WitnessPolynomial<F: PrimeField> {
+    Single(Polynomial<F, Coefficients>),
+    PerRegister(Vec<Polynomial<F, Coefficients>>),
 }
 
 pub trait IntoARP<F: PrimeField> {
@@ -174,6 +181,7 @@ impl<F: PrimeField> IntoARP<F> for TestTraceSystem<F> {
 
         ARP::<F> {
             witness,
+            witness_poly: None,
             num_steps,
             num_registers,
             constraints,

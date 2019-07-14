@@ -1,9 +1,11 @@
 use crate::air::*;
 use ff::PrimeField;
-use super::{IntoARP, ARP};
+
+use super::*;
 use crate::domains::Domain;
 use crate::SynthesisError;
-
+use crate::polynomials::*;
+use crate::fft::multicore::Worker;
 
 
 impl<F: PrimeField> ARP<F> {
@@ -14,9 +16,10 @@ impl<F: PrimeField> ARP<F> {
     /// - make interpolating polynomial f
     /// - add masking coefficients for constraints
     /// - keep boundary constraints as it is
-    pub fn route(&mut self ) -> Result<(), SynthesisError> {
-        // TODO
-        // let witness = self.witness.expect("is something");
+    pub fn route_into_single_witness_poly(&mut self ) -> Result<(), SynthesisError> {
+        if self.witness.is_some() {
+            self.make_witness_polymonial()?;
+        }
 
         let num_registers = self.num_registers as u64;
         let num_steps = self.num_steps as u64;
@@ -109,6 +112,31 @@ impl<F: PrimeField> ARP<F> {
 
         Ok(())
     }
+
+    fn make_witness_polymonial(&mut self) -> Result<(), SynthesisError> {
+        let witness = self.witness.take().expect("is something");
+        let num_registers = self.num_registers as u64;
+        let num_steps = self.num_steps as u64;
+
+        let num_registers_sup = num_registers.next_power_of_two();
+        let num_steps_sup = num_steps.next_power_of_two();
+
+        let worker = Worker::new();
+        let mut flattened_witness = vec![F::zero(); (num_registers_sup * num_steps_sup) as usize];
+        for (w, reg_witness) in witness.into_iter().enumerate() {
+            for (t, value) in reg_witness.into_iter().enumerate() {
+                let idx = w + t*(num_registers_sup as usize);
+                unsafe {
+                    *flattened_witness.get_unchecked_mut(idx) = value;
+                }
+            }
+        }
+        let poly = Polynomial::<F, _>::from_values(flattened_witness)?;
+        let witness_poly = poly.ifft(&worker);
+        self.witness_poly = Some(WitnessPolynomial::Single(witness_poly));
+
+        Ok(())
+    }
 }
 
 #[test]
@@ -131,7 +159,7 @@ fn test_fib_conversion() {
     fib.trace(&mut test_tracer).expect("should work");
     test_tracer.calculate_witness(1, 1, 5);
     let mut arp = ARP::<Fr>::new(test_tracer);
-    arp.route().expect("must work");
+    arp.route_into_single_witness_poly().expect("must work");
 
     for c in arp.constraints.iter() {
         println!("{:?}", c);

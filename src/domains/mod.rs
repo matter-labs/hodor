@@ -9,7 +9,13 @@ pub struct Domain<F: PrimeField> {
 
 impl<F: PrimeField> Domain<F> {
     pub fn new_for_size(size: u64) -> Result<Self, SynthesisError> {
-        let power_of_two = size.next_power_of_two();
+        let size = size.next_power_of_two();
+        let mut power_of_two = 0;
+        let mut k = size;
+        while k != 1 {
+            k >>= 1;
+            power_of_two += 1;
+        }
         let max_power_of_two = F::S as u64;
         if power_of_two > max_power_of_two {
             return Err(SynthesisError::Error);
@@ -19,8 +25,6 @@ impl<F: PrimeField> Domain<F> {
         for _ in power_of_two..max_power_of_two {
             generator.square()
         }
-
-        let size = 1u64 << power_of_two;
 
         Ok(Self {
             size: size,
