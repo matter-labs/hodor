@@ -140,7 +140,7 @@ impl<F: PrimeField> ARP<F> {
 }
 
 #[test]
-fn test_fib_conversion() {
+fn test_fib_conversion_into_arp() {
     use crate::Fr;
     use crate::air::Fibonacci;
     use crate::air::TestTraceSystem;
@@ -159,7 +159,9 @@ fn test_fib_conversion() {
     fib.trace(&mut test_tracer).expect("should work");
     test_tracer.calculate_witness(1, 1, 5);
     let mut arp = ARP::<Fr>::new(test_tracer);
+    println!("Witness = {:?}", arp.witness);
     arp.route_into_single_witness_poly().expect("must work");
+    println!("Witness poly = {:?}", arp.witness_poly);
 
     for c in arp.constraints.iter() {
         println!("{:?}", c);

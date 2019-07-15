@@ -267,7 +267,7 @@ impl<F: PrimeField> ALI<F> {
 }
 
 #[test]
-fn test_fib_conversion() {
+fn test_fib_conversion_into_ali() {
     use crate::Fr;
     use crate::air::Fibonacci;
     use crate::air::TestTraceSystem;
