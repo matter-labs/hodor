@@ -257,6 +257,34 @@ impl<F: PrimeField> Polynomial<F, Coefficients> {
             }
         });
     }
+
+    pub fn evaluate_at(&mut self, worker: &Worker, g: F) -> F {
+        let num_threads = worker.cpus;
+        let mut subvalues = vec![F::zero(); num_threads as usize];
+
+        worker.scope(self.coeffs.len(), |scope, chunk| {
+            for (i, (a, s)) in self.coeffs.chunks(chunk)
+                        .zip(subvalues.chunks_mut(chunk))
+                        .enumerate() {
+                scope.spawn(move |_| {
+                    let mut x = g.pow([(i*chunk) as u64]);
+                    for a in a.iter() {
+                        let mut value = x;
+                        value.mul_assign(&a);
+                        s[0].add_assign(&value);
+                        x.mul_assign(&g);
+                    }
+                });
+            }
+        });
+
+        let mut result = F::zero();
+        for v in subvalues.iter() {
+            result.add_assign(&v);
+        }
+
+        result
+    }
 }
 
 
@@ -444,5 +472,4 @@ impl<F: PrimeField> Polynomial<F, Values> {
             }
         });
     }
-
 }

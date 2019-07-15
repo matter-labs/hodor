@@ -7,6 +7,8 @@ use crate::fft::multicore::Worker;
 use crate::SynthesisError;
 use crate::domains::*;
 
+pub mod deep_ali;
+
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 
