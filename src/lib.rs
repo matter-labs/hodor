@@ -19,9 +19,14 @@ pub mod ali;
 
 use ff::{Field, PrimeField, PrimeFieldRepr};
 
+// #[derive(PrimeField)]
+// #[PrimeFieldModulus = "52435875175126190479447740508185965837690552500527637822603658699938581184513"]
+// #[PrimeFieldGenerator = "7"]
+// pub struct Fr(FrRepr);
+
 #[derive(PrimeField)]
-#[PrimeFieldModulus = "52435875175126190479447740508185965837690552500527637822603658699938581184513"]
-#[PrimeFieldGenerator = "7"]
+#[PrimeFieldModulus = "17"]
+#[PrimeFieldGenerator = "3"]
 pub struct Fr(FrRepr);
 
 #[derive(Debug)]

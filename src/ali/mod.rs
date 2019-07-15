@@ -173,6 +173,43 @@ impl<F: PrimeField> ALI<F> {
         let mut g_poly = Polynomial::<F, Values>::new_for_size(g_size).expect("should work");
         let subterm = g_poly.clone();
 
+        // such calls most likely will have start at 0 and num_steps = domain_size - 1
+        fn divisor_for_dense_constraint_in_coset<F: PrimeField> (
+            domain: &Domain<F>,
+            start_at: u64,
+            num_steps: u64,
+        ) -> F {
+            let mut c = F::multiplicative_generator().pow([domain.size]);
+            c.sub_assign(&F::one());
+
+            let domain_size = domain.size;
+            let mut d = F::one();
+            let mut root = F::one();
+            let generator = domain.generator;
+            // "trim" from start, there are no roots like (x - 1)(x - omega)(x - omega^2)
+            for _ in 0..start_at {
+                let mut tmp = F::multiplicative_generator();
+                tmp.sub_assign(&root);
+                d.mul_assign(&tmp);
+
+                root.mul_assign(&generator);
+            }
+
+            let mut root = generator.pow([num_steps]);
+            // "trim" from start, there are no roots like (x - omega^{num_steps})(...)
+            for _ in num_steps..domain_size{
+                let mut tmp = F::multiplicative_generator();
+                tmp.sub_assign(&root);
+                d.mul_assign(&tmp);
+
+                root.mul_assign(&generator);
+            }
+
+            c.mul_assign(&d.inverse().expect("should exist"));
+
+            c
+        }
+
         // TODO: Check that witness values are evaluated at the coset, so division is valid
 
         for constraint in self.constraints.iter() {
@@ -180,19 +217,13 @@ impl<F: PrimeField> ALI<F> {
             // first we need to calculate denominator at the value
             let demonimator = match constraint.density {
                 ConstraintDensity::Dense => {
-                    let start_at = constraint.start_at;
+                    let start_at = constraint.start_at as u64;
 
-                    let mut constraint_roots_generator = column_domain.generator;
-                    constraint_roots_generator.mul_assign(&F::multiplicative_generator());
-
-                    let mut root = constraint_roots_generator.pow([start_at as u64]);
-                    let mut result = F::one();
-                    for _ in start_at..self.num_steps {
-                        let mut term = generator;
-                        term.sub_assign(&root);
-                        result.mul_assign(&term);
-                        root.mul_assign(&constraint_roots_generator);
-                    }
+                    let result = divisor_for_dense_constraint_in_coset(
+                        &column_domain, 
+                        start_at,
+                        self.num_steps as u64
+                    );
 
                     result
                 },
