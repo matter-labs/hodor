@@ -138,7 +138,9 @@ impl<F: PrimeField> ALI<F> {
         let mut current_coeff = F::one();
         let column_domain = Domain::<F>::new_for_size(self.num_steps as u64)?;
 
-        fn evaluate_constraint_term_in_coset<F: PrimeField>(
+        // ---------------------
+
+        fn evaluate_constraint_term_into_values<F: PrimeField>(
             term: &ConstraintTerm<F>,
             substituted_witness: &HashMap::<StepDifference<F>, Polynomial<F, Coefficients>>,
             worker: &Worker
@@ -159,7 +161,7 @@ impl<F: PrimeField> ALI<F> {
                             base.scale(&worker, uni.coeff);
                         }
                     }
-                    // let base = base.coset_fft(&worker);
+
                     let base = base.fft(&worker);
 
                     base
@@ -172,6 +174,52 @@ impl<F: PrimeField> ALI<F> {
             Ok(result)
         }
 
+        // ---------------------
+
+        fn evaluate_constraint_term_into_coefficients<F: PrimeField>(
+            term: &ConstraintTerm<F>,
+            substituted_witness: &HashMap::<StepDifference<F>, Polynomial<F, Coefficients>>,
+            worker: &Worker
+        ) -> Result<Polynomial<F, Coefficients>, SynthesisError>
+        {
+            let result = match term {
+                ConstraintTerm::Univariate(uni) => {
+                    let mut base = substituted_witness.get(&uni.steps_difference).expect("should exist").clone();
+                    let mut new_base = if uni.power == 1u64 {
+                        base
+                    } else {
+                        let scaling_factor = uni.power.next_power_of_two() as usize;
+                        base.extend(scaling_factor, &worker)?;
+                        let mut into_values = base.fft(&worker);
+                        into_values.pow(&worker, uni.power);
+
+                        into_values.ifft(&worker)
+                    };
+
+                    let one = F::one();
+   
+                    if uni.coeff != one {
+                        let mut minus_one = one;
+                        minus_one.negate();
+                        if uni.coeff == minus_one {
+                            new_base.negate(&worker);
+                        } else {
+                            new_base.scale(&worker, uni.coeff);
+                        }
+                    }
+
+                    new_base
+                },
+                ConstraintTerm::Polyvariate(_poly) => {
+                    unimplemented!();
+                }
+            };
+
+            Ok(result)
+        }
+
+        // ---------------------
+
         let worker = Worker::new();
         let num_registers_sup = self.num_registers.next_power_of_two();
         let num_steps_sup = self.num_steps.next_power_of_two();
@@ -179,6 +227,9 @@ impl<F: PrimeField> ALI<F> {
 
         let mut g_poly = Polynomial::<F, Coefficients>::new_for_size(g_size).expect("should work");
         let subterm_values = Polynomial::<F, Values>::new_for_size(g_size).expect("should work");
+        let subterm_coefficients = Polynomial::<F, Coefficients>::new_for_size(g_size).expect("should work");
+
+        // ---------------------
 
         // such calls most likely will have start at 0 and num_steps = domain_size - 1
         fn divisor_for_dense_constraint_in_coset<F: PrimeField> (
@@ -220,6 +271,8 @@ impl<F: PrimeField> ALI<F> {
             (c, divisor_degree)
         }
 
+        // ---------------------
+
         // TODO: Check that witness values are evaluated at the coset, so division is valid
 
         for constraint in self.constraints.iter() {
@@ -246,26 +299,42 @@ impl<F: PrimeField> ALI<F> {
             let denominator = denominator.inverse().expect("is non-zero");
 
             let mut subterm_values = subterm_values.clone();
+            let mut subterm_coefficients = subterm_coefficients.clone();
 
             println!("Evaluating constraint {:?}", constraint);
 
             for term in constraint.terms.iter() {
-                let mut evaluated_term = evaluate_constraint_term_in_coset(
+                let mut evaluated_term = evaluate_constraint_term_into_coefficients(
                     &term, 
                     &self.mask_applied_polynomials,
                     &worker
                 )?;
+                // we are in a coefficients form, so add constant term
 
                 let factor = subterm_values.as_ref().len() / evaluated_term.as_ref().len();
                 evaluated_term.extend(factor, &worker)?;
-                subterm_values.add_assign(&worker, &evaluated_term);
+                subterm_coefficients.add_assign(&worker, &evaluated_term);
             }
 
-            println!("Subterm values = {:?}", subterm_values);
-            let subterm_coeffs = subterm_values.ifft(&worker);
-            println!("Subterm coeffs = {:?}", subterm_coeffs);
+            subterm_coefficients.as_mut()[0].add_assign(&constraint.constant_term);
 
-            let mut subterm_values_in_coset = subterm_coeffs.coset_fft(&worker);
+            // for term in constraint.terms.iter() {
+            //     let mut evaluated_term = evaluate_constraint_term_in_coset(
+            //         &term, 
+            //         &self.mask_applied_polynomials,
+            //         &worker
+            //     )?;
+
+            //     let factor = subterm_values.as_ref().len() / evaluated_term.as_ref().len();
+            //     evaluated_term.extend(factor, &worker)?;
+            //     subterm_values.add_assign(&worker, &evaluated_term);
+            // }
+
+            // println!("Subterm values = {:?}", subterm_values);
+            // let subterm_coeffs = subterm_values.ifft(&worker);
+            println!("Subterm coefficients = {:?}", subterm_coefficients);
+
+            let mut subterm_values_in_coset = subterm_coefficients.coset_fft(&worker);
             println!("Subterm values in coset = {:?}", subterm_values_in_coset);
 
             // do division at the values
