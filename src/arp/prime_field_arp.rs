@@ -146,10 +146,8 @@ fn test_fib_conversion_into_arp() {
     use crate::arp::IntoARP;
 
     let fib = Fibonacci::<Fr> {
-        first_a: Some(1),
-        first_b: Some(1),
-        final_a: Some(3),
-        at_step: Some(2),
+        final_b: Some(5),
+        at_step: Some(3),
         _marker: std::marker::PhantomData
     };
 

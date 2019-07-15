@@ -83,7 +83,7 @@ impl<F: PrimeField> TraceSystem<F> for TestTraceSystem<F> {
 
         Ok(Register::Aux(num_registers))
     }
-    
+
     fn add_constraint<WF>(
         &mut self, 
         constraint: Constraint<F>, 
@@ -141,9 +141,7 @@ impl<F: PrimeField> TraceSystem<F> for TestTraceSystem<F> {
 
 
 pub(crate) struct Fibonacci<F: PrimeField> {
-    pub(crate) first_a: Option<u64>,
-    pub(crate) first_b: Option<u64>,
-    pub(crate) final_a: Option<u64>,
+    pub(crate) final_b: Option<u64>,
     pub(crate) at_step: Option<usize>,
     pub(crate) _marker: std::marker::PhantomData<F>
 }
@@ -213,17 +211,17 @@ impl<F: PrimeField> IntoAIR<F> for Fibonacci<F> {
         tracer.add_constraint_with_witness(fib_constraint_1, witness_derivation_function_1)?;
 
 
-        if self.final_a.is_some() {
-            let final_a = self.final_a.unwrap();
+        if self.final_b.is_some() {
+            let final_b = self.final_b.unwrap();
             let at_step = self.at_step.unwrap();
 
             let initial_a = F::one();
             let initial_b = F::one();
-            let final_a = F::from_str(&final_a.to_string()).unwrap();
+            let final_b = F::from_str(&final_b.to_string()).unwrap();
 
             tracer.add_boundary_constraint("Initial A".to_string(), a_register, 0, Some(initial_a))?;
             tracer.add_boundary_constraint("Initial B".to_string(), b_register, 0, Some(initial_b))?;
-            tracer.add_boundary_constraint("Final A".to_string(), a_register, at_step, Some(final_a))?;
+            tracer.add_boundary_constraint("Final B".to_string(), b_register, at_step, Some(final_b))?;
         }
 
         Ok(())
@@ -288,10 +286,8 @@ fn test_fibonacci_air() {
     use crate::Fr;
 
     let fib = Fibonacci::<Fr> {
-        first_a: Some(1),
-        first_b: Some(1),
-        final_a: Some(3),
-        at_step: Some(2),
+        final_b: Some(5),
+        at_step: Some(3),
         _marker: std::marker::PhantomData
     };
 
