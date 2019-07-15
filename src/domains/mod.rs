@@ -1,6 +1,7 @@
 use ff::PrimeField;
 use crate::SynthesisError;
 
+#[derive(Debug)]
 pub struct Domain<F: PrimeField> {
     pub size: u64,
     pub power_of_two: u64,

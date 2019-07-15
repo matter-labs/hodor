@@ -19,7 +19,7 @@ impl PolynomialForm for Values{}
 pub struct Polynomial<F: PrimeField, P: PolynomialForm> {
     coeffs: Vec<F>,
     exp: u32,
-    omega: F,
+    pub omega: F,
     omegainv: F,
     geninv: F,
     minv: F,
@@ -160,9 +160,8 @@ impl<F: PrimeField> Polynomial<F, Coefficients> {
 
         // now we need to interleave the coefficients
         worker.scope(old_coeffs.len(), |scope, chunk| {
-            for (i, (old, new)) in old_coeffs.chunks(chunk)
-                            .zip(self.coeffs.chunks_mut(chunk*factor))
-                            .enumerate() {
+            for (old, new) in old_coeffs.chunks(chunk)
+                            .zip(self.coeffs.chunks_mut(chunk*factor)) {
                 scope.spawn(move |_| {
                     for (j, old_coeff) in old.iter().enumerate() {
                         new[j*factor] = *old_coeff;
@@ -377,6 +376,69 @@ impl<F: PrimeField> Polynomial<F, Values> {
                 scope.spawn(move |_| {
                     for (a, b) in a.iter_mut().zip(b.iter()) {
                         a.mul_assign(&b);
+                    }
+                });
+            }
+        });
+    }
+
+    pub fn batch_inversion(&mut self, worker: &Worker) {
+        let num_threads = worker.cpus;
+        let mut grand_products = vec![F::one(); self.coeffs.len()];
+        let mut subproducts = vec![F::one(); num_threads as usize];
+
+        worker.scope(self.coeffs.len(), |scope, chunk| {
+            for ((a, g), s) in self.coeffs.chunks(chunk)
+                        .zip(grand_products.chunks_mut(chunk))
+                        .zip(subproducts.chunks_mut(1)) {
+                scope.spawn(move |_| {
+                    for (a, g) in a.iter().zip(g.iter_mut()) {
+                        s[0].mul_assign(&a);
+                        *g = s[0];
+                    }
+                });
+            }
+        });
+
+        // now coeffs are [a, b, c, d, ..., z]
+        // grand_products are [a, ab, abc, d, de, def, ...., xyz]
+        // subproducts are [abc, def, xyz]
+
+        let mut full_grand_product = F::one();
+        for sub in subproducts.iter() {
+            full_grand_product.mul_assign(sub);
+        }
+
+        let product_inverse = full_grand_product.inverse().expect("is non-zero");
+
+        // now let's get [abc^-1, def^-1, ..., xyz^-1];
+        let mut subinverses = vec![F::one(); num_threads];
+        for (i, s) in subinverses.iter_mut().enumerate() {
+            let mut tmp = product_inverse;
+            for (j, p) in subproducts.iter().enumerate() {
+                if i == j {
+                    continue;
+                }
+                tmp.mul_assign(&p);
+            }
+
+            *s = tmp;
+        }
+
+        worker.scope(self.coeffs.len(), |scope, chunk| {
+            for ((a, g), s) in self.coeffs.chunks_mut(chunk)
+                        .zip(grand_products.chunks(chunk))
+                        .zip(subinverses.chunks_mut(1)) {
+                scope.spawn(move |_| {
+                    for (a, g) in a.iter_mut().rev()
+                                .zip(g.iter().rev().skip(1).chain(Some(F::one()).iter())) {
+                        // s[0] = abc^-1
+                        // a = c
+                        // g = ab
+                        let tmp = *a; // c
+                        *a = *g;
+                        a.mul_assign(&s[0]); // a = ab*(abc^-1) = c^-1
+                        s[0].mul_assign(&tmp); // s[0] = (ab)^-1
                     }
                 });
             }

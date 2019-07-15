@@ -15,7 +15,7 @@ use self::crossbeam::thread::{Scope};
 
 #[derive(Clone)]
 pub struct Worker {
-    cpus: usize,
+    pub(crate) cpus: usize,
     pool: CpuPool
 }
 

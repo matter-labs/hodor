@@ -197,7 +197,6 @@ impl<F: PrimeField> ALI<F> {
                     };
 
                     let one = F::one();
-   
                     if uni.coeff != one {
                         let mut minus_one = one;
                         minus_one.negate();
@@ -226,49 +225,127 @@ impl<F: PrimeField> ALI<F> {
         let g_size = num_registers_sup * num_steps_sup * self.max_constraint_power;
 
         let mut g_poly = Polynomial::<F, Coefficients>::new_for_size(g_size).expect("should work");
-        let subterm_values = Polynomial::<F, Values>::new_for_size(g_size).expect("should work");
+        // let subterm_values = Polynomial::<F, Values>::new_for_size(g_size).expect("should work");
         let subterm_coefficients = Polynomial::<F, Coefficients>::new_for_size(g_size).expect("should work");
 
         // ---------------------
 
         // such calls most likely will have start at 0 and num_steps = domain_size - 1
-        fn divisor_for_dense_constraint_in_coset<F: PrimeField> (
-            domain: &Domain<F>,
+        fn inverse_divisor_for_dense_constraint_in_coset<F: PrimeField> (
+            column_domain: &Domain<F>,
+            term_evaluation_domain: &Domain<F>,
+            alpha: F,
             start_at: u64,
             num_steps: u64,
-        ) -> (F, usize) {
-            let mut divisor_degree = domain.size as usize;
-            let mut c = F::multiplicative_generator().pow([domain.size]);
-            c.sub_assign(&F::one());
+            worker: &Worker
+        ) -> Result<(Polynomial<F, Values>, usize), SynthesisError> {
+            let mut divisor_degree = column_domain.size as usize;
+            let divisor_domain_size = column_domain.size;
+            divisor_degree -= start_at as usize;
+            divisor_degree -= (divisor_domain_size - num_steps) as usize;
 
-            let domain_size = domain.size;
-            let mut d = F::one();
-            let mut root = F::one();
-            let generator = domain.generator;
-            // "trim" from start, there are no roots like (x - 1)(x - omega)(x - omega^2)
-            for _ in 0..start_at {
-                let mut tmp = F::multiplicative_generator();
-                tmp.sub_assign(&root);
-                d.mul_assign(&tmp);
-                divisor_degree -= 1;
+            let roots = {
+                let roots_generator = column_domain.generator;
 
-                root.mul_assign(&generator);
-            }
+                let mut roots = vec![];
+                let mut root = F::one();
+                for _ in 0..start_at {
+                    roots.push(root);
+                    root.mul_assign(&roots_generator);                
+                }
 
-            let mut root = generator.pow([num_steps]);
-            // "trim" from start, there are no roots like (x - omega^{num_steps})(...)
-            for _ in num_steps..domain_size{
-                let mut tmp = F::multiplicative_generator();
-                tmp.sub_assign(&root);
-                d.mul_assign(&tmp);
-                divisor_degree -= 1;
+                let mut root = roots_generator.pow([num_steps]);
+                for _ in num_steps..divisor_domain_size {
+                    roots.push(root);
+                    root.mul_assign(&roots_generator);
+                }
 
-                root.mul_assign(&generator);
-            }
+                roots
+            };
 
-            c.mul_assign(&d.inverse().expect("should exist"));
+            let roots_iter = roots.iter();
 
-            (c, divisor_degree)
+            let evaluation_domain_generator = term_evaluation_domain.generator;
+            let multiplicative_generator = F::multiplicative_generator();
+
+            // these are values at the coset
+            let mut inverse_divisors = Polynomial::<F, Values>::new_for_size(term_evaluation_domain.size as usize)?;
+
+            // prepare for batch inversion
+            worker.scope(inverse_divisors.as_ref().len(), |scope, chunk| {
+                for (i, inv_divis) in inverse_divisors.as_mut().chunks_mut(chunk).enumerate() {
+                    scope.spawn(move |_| {
+                        let mut x = evaluation_domain_generator.pow([(i*chunk) as u64]);
+                        x.mul_assign(&multiplicative_generator);
+                        for v in inv_divis.iter_mut() {
+                            *v = x.pow([divisor_domain_size]);
+                            v.sub_assign(&F::one());
+                        }
+                    });
+                }
+            });
+
+            // now polynomial is filled with X^T - 1, and need to be inversed
+
+            inverse_divisors.batch_inversion(&worker);
+
+            // now do the evaluation
+
+            worker.scope(inverse_divisors.as_ref().len(), |scope, chunk| {
+                for (i, inv_divis) in inverse_divisors.as_mut().chunks_mut(chunk).enumerate() {
+                    let roots_iter_outer = roots_iter.clone();
+                    scope.spawn(move |_| {
+                        let mut x = evaluation_domain_generator.pow([(i*chunk) as u64]);
+                        x.mul_assign(&multiplicative_generator);
+                        for v in inv_divis.iter_mut() {
+                            let mut c_inverse_by_alpha = *v;
+                            c_inverse_by_alpha.mul_assign(&alpha);
+                            let mut d = c_inverse_by_alpha;
+                            for root in roots_iter_outer.clone() {
+                                // (X - root)
+                                let mut tmp = x;
+                                tmp.sub_assign(&root);
+                                d.mul_assign(&tmp);
+                            } 
+                            // alpha / ( (X^T-1) / (X - 1)(X - omega)(...) ) = alpha * (X - 1)(X - omega)(...) / (X^T-1)
+                            *v = d;
+
+                            x.mul_assign(&evaluation_domain_generator);
+                        }
+                    });
+                }
+            });
+
+            // // TODO: optimize into batch inversion
+
+            // worker.scope(inverse_divisors.as_ref().len(), |scope, chunk| {
+            //     for (i, inv_divis) in inverse_divisors.as_mut().chunks_mut(chunk).enumerate() {
+            //         let roots_iter_outer = roots_iter.clone();
+            //         scope.spawn(move |_| {
+            //             let mut x = evaluation_domain_generator.pow([(i*chunk) as u64]);
+            //             x.mul_assign(&multiplicative_generator);
+            //             for v in inv_divis.iter_mut() {
+            //                 let mut c = x.pow([divisor_domain_size]);
+            //                 c.sub_assign(&F::one());
+            //                 let mut c_inverse_by_alpha = c.inverse().expect("must exist");
+            //                 c_inverse_by_alpha.mul_assign(&alpha);
+            //                 let mut d = c_inverse_by_alpha;
+            //                 for root in roots_iter_outer.clone() {
+            //                     // (X - root)
+            //                     let mut tmp = x;
+            //                     tmp.sub_assign(&root);
+            //                     d.mul_assign(&tmp);
+            //                 } 
+            //                 // alpha / ( (X^T-1) / (X - 1)(X - omega)(...) ) = alpha * (X - 1)(X - omega)(...) / (X^T-1)
+            //                 *v = d;
+
+            //                 x.mul_assign(&evaluation_domain_generator);
+            //             }
+            //         });
+            //     }
+            // });
+
+            Ok((inverse_divisors, divisor_degree))
         }
 
         // ---------------------
@@ -277,18 +354,26 @@ impl<F: PrimeField> ALI<F> {
 
         for constraint in self.constraints.iter() {
             current_coeff.mul_assign(&alpha);
+            
+            let mut subterm_coefficients = subterm_coefficients.clone();
+
+            let subterm_domain = Domain::new_for_size(subterm_coefficients.as_ref().len() as u64)?;
+
             // first we need to calculate denominator at the value
-            let (denominator, divisor_degree) = match constraint.density {
+            let (inverse_divisors, _divisor_degree) = match constraint.density {
                 ConstraintDensity::Dense => {
                     let start_at = constraint.start_at as u64;
 
-                    let result = divisor_for_dense_constraint_in_coset(
-                        &column_domain, 
+                    let result = inverse_divisor_for_dense_constraint_in_coset(
+                        &column_domain,
+                        &subterm_domain, 
+                        current_coeff,
                         start_at,
-                        self.num_steps as u64
-                    );
+                        self.num_steps as u64,
+                        &worker
+                    )?;
 
-                    println!("Divisor = {:?}", result);
+                    // println!("Divisor = {:?}", result);
                     result
                 },
                 _ => {
@@ -296,12 +381,9 @@ impl<F: PrimeField> ALI<F> {
                 }
             };
 
-            let denominator = denominator.inverse().expect("is non-zero");
+            // println!("Inverse divisors = {:?}", inverse_divisors);
 
-            let mut subterm_values = subterm_values.clone();
-            let mut subterm_coefficients = subterm_coefficients.clone();
-
-            println!("Evaluating constraint {:?}", constraint);
+            // println!("Evaluating constraint {:?}", constraint);
 
             for term in constraint.terms.iter() {
                 let mut evaluated_term = evaluate_constraint_term_into_coefficients(
@@ -309,48 +391,31 @@ impl<F: PrimeField> ALI<F> {
                     &self.mask_applied_polynomials,
                     &worker
                 )?;
-                // we are in a coefficients form, so add constant term
-
-                let factor = subterm_values.as_ref().len() / evaluated_term.as_ref().len();
+                let factor = subterm_coefficients.as_ref().len() / evaluated_term.as_ref().len();
                 evaluated_term.extend(factor, &worker)?;
                 subterm_coefficients.add_assign(&worker, &evaluated_term);
             }
 
             subterm_coefficients.as_mut()[0].add_assign(&constraint.constant_term);
 
-            // for term in constraint.terms.iter() {
-            //     let mut evaluated_term = evaluate_constraint_term_in_coset(
-            //         &term, 
-            //         &self.mask_applied_polynomials,
-            //         &worker
-            //     )?;
-
-            //     let factor = subterm_values.as_ref().len() / evaluated_term.as_ref().len();
-            //     evaluated_term.extend(factor, &worker)?;
-            //     subterm_values.add_assign(&worker, &evaluated_term);
-            // }
-
-            // println!("Subterm values = {:?}", subterm_values);
-            // let subterm_coeffs = subterm_values.ifft(&worker);
-            println!("Subterm coefficients = {:?}", subterm_coefficients);
-
+            // these values are correct and are evaluations of some polynomial at points (gen, gen * omega, gen * omega*2)
             let mut subterm_values_in_coset = subterm_coefficients.coset_fft(&worker);
-            println!("Subterm values in coset = {:?}", subterm_values_in_coset);
 
-            // do division at the values
-            let mut alpha_by_demon = denominator;
-            alpha_by_demon.mul_assign(&current_coeff);
-            subterm_values_in_coset.scale(&worker, alpha_by_demon);
+            subterm_values_in_coset.mul_assign(&worker, &inverse_divisors);
 
-            println!("Subterm values in coset after division = {:?}", subterm_values_in_coset);
+            let subterm_coefficients = subterm_values_in_coset.icoset_fft(&worker);
+            // println!("Constraint alpha*P/Q coeffs before trimming = {:?}", subterm_coefficients);
+            // let mut degree = subterm_coefficients.as_ref().len() - 1;
+            // for c in subterm_coefficients.as_ref().iter().rev() {
+            //     if c.is_zero() {
+            //         degree -= 1;
+            //     } else {
+            //         break;
+            //     }
+            // }
+            // println!("Final degree = {}", degree);
 
-            let mut subterm_coeffs = subterm_values_in_coset.icoset_fft(&worker);
-            let existing_degree = subterm_coeffs.as_ref().len() - 1;
-            let new_degree = existing_degree - divisor_degree;
-            subterm_coeffs.trim_to_degree(new_degree).expect("must reduce degree");
-            println!("Constraint alpha*P/Q coeffs = {:?}", subterm_coeffs);
-
-            g_poly.add_assign(&worker, &subterm_coeffs);
+            g_poly.add_assign(&worker, &subterm_coefficients);
         }
 
         self.g_poly = Some(g_poly);
