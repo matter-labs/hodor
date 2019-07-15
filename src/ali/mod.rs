@@ -24,11 +24,13 @@ impl<F: PrimeField> Hash for StepDifference<F> {
 }
 
 // ARP works with remapped registers and no longer cares about their meaning
+#[derive(Debug)]
 pub struct ALI<F: PrimeField> {
     pub f_poly: WitnessPolynomial<F>,
-    pub g_poly: Polynomial<F, Values>,
+    pub g_poly: Option<Polynomial<F, Coefficients>>,
     pub num_steps: usize,
     pub num_registers: usize,
+    pub max_constraint_power: usize,
     pub constraints: Vec<Constraint<F>>,
     pub boundary_constraints: Vec<BoundaryConstraint<F>>,
     mask_applied_polynomials: HashMap::<StepDifference<F>, Polynomial<F, Coefficients>>
@@ -118,16 +120,13 @@ impl<F: PrimeField> From<ARP<F>> for ALI<F> {
 
         assert_eq!(f_poly.as_ref().len(), num_registers_sup * num_steps_sup);
 
-        let g_size = num_registers_sup * num_steps_sup * (max_constraint_power as usize);
-
-        let g_poly = Polynomial::<F, Values>::new_for_size(g_size).expect("should work");
-
         ALI::<F> {
             f_poly: f,
-            g_poly: g_poly,
+            g_poly: None,
             num_steps: arp.num_steps,
             num_registers: arp.num_registers,
             constraints: arp.constraints,
+            max_constraint_power: max_constraint_power as usize,
             boundary_constraints: arp.boundary_constraints,
             mask_applied_polynomials: mask_applied_polynomials
         }
@@ -136,12 +135,11 @@ impl<F: PrimeField> From<ARP<F>> for ALI<F> {
 
 impl<F: PrimeField> ALI<F> {
     pub fn calculate_g(&mut self, alpha: F) -> Result<(), SynthesisError> {
-        let subterm = self.g_poly.clone();
         let mut current_coeff = F::one();
         let generator = F::multiplicative_generator();
         let column_domain = Domain::<F>::new_for_size(self.num_steps as u64)?;
 
-        fn evaluate_constraint_term<F: PrimeField>(
+        fn evaluate_constraint_term_in_coset<F: PrimeField>(
             term: &ConstraintTerm<F>,
             substituted_witness: &HashMap::<StepDifference<F>, Polynomial<F, Coefficients>>,
             worker: &Worker
@@ -155,7 +153,7 @@ impl<F: PrimeField> ALI<F> {
                     if uni.coeff != F::one() {
                         base.scale(&worker, uni.coeff);
                     }
-                    let base = base.fft(&worker);
+                    let base = base.coset_fft(&worker);
 
                     base
                 },
@@ -168,6 +166,14 @@ impl<F: PrimeField> ALI<F> {
         }
 
         let worker = Worker::new();
+        let num_registers_sup = self.num_registers.next_power_of_two();
+        let num_steps_sup = self.num_steps.next_power_of_two();
+        let g_size = num_registers_sup * num_steps_sup * self.max_constraint_power;
+
+        let mut g_poly = Polynomial::<F, Values>::new_for_size(g_size).expect("should work");
+        let subterm = g_poly.clone();
+
+        // TODO: Check that witness values are evaluated at the coset, so division is valid
 
         for constraint in self.constraints.iter() {
             current_coeff.mul_assign(&alpha);
@@ -175,7 +181,10 @@ impl<F: PrimeField> ALI<F> {
             let demonimator = match constraint.density {
                 ConstraintDensity::Dense => {
                     let start_at = constraint.start_at;
-                    let constraint_roots_generator = column_domain.generator;
+
+                    let mut constraint_roots_generator = column_domain.generator;
+                    constraint_roots_generator.mul_assign(&F::multiplicative_generator());
+
                     let mut root = constraint_roots_generator.pow([start_at as u64]);
                     let mut result = F::one();
                     for _ in start_at..self.num_steps {
@@ -197,7 +206,7 @@ impl<F: PrimeField> ALI<F> {
             let mut subterm = subterm.clone();
 
             for term in constraint.terms.iter() {
-                let mut evaluated_term = evaluate_constraint_term(
+                let mut evaluated_term = evaluate_constraint_term_in_coset(
                     &term, 
                     &self.mask_applied_polynomials,
                     &worker
@@ -212,10 +221,15 @@ impl<F: PrimeField> ALI<F> {
 
             let mut alpha_by_demon = demonimator;
             alpha_by_demon.mul_assign(&current_coeff);
-            subterm.scale(&worker, alpha_by_demon);
 
-            self.g_poly.add_assign(&worker, &subterm);
+            // TODO: join two methods
+            subterm.scale(&worker, alpha_by_demon);
+            g_poly.add_assign(&worker, &subterm);
         }
+
+        let g_interpolant = g_poly.icoset_fft(&worker);
+
+        self.g_poly = Some(g_interpolant);
 
         Ok(())
     }
@@ -229,6 +243,7 @@ fn test_fib_conversion() {
     use crate::air::IntoAIR;
     use crate::arp::IntoARP;
     use crate::ali::ALI;
+    use crate::fft::multicore::Worker;
 
     let fib = Fibonacci::<Fr> {
         first_a: Some(1),
@@ -247,4 +262,9 @@ fn test_fib_conversion() {
     let mut ali = ALI::from(arp);
     let alpha = Fr::from_str("3").unwrap();
     ali.calculate_g(alpha).expect("must work");
+
+    let g_poly_interpolant = ali.g_poly.take().expect("is something");
+    let worker = Worker::new();
+    let g_values = g_poly_interpolant.fft(&worker);
+    println!("G values = {:?}", g_values);
 }
