@@ -62,9 +62,8 @@ pub trait TraceSystem<F: PrimeField> {
         f: CWF
     ) -> Result<Register, TracingError> where CWF: 'static + FnOnce(usize) -> Result<(F, bool), TracingError>;
     // tries to get aux register
-    fn get_aux_register(
+    fn allocate_aux_register(
         &mut self, 
-        register: usize
     ) -> Result<Register, TracingError>;
     // adds constraint and 
     fn add_constraint<WF>(

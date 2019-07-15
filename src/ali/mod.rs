@@ -33,7 +33,7 @@ pub struct ALI<F: PrimeField> {
     pub max_constraint_power: usize,
     pub constraints: Vec<Constraint<F>>,
     pub boundary_constraints: Vec<BoundaryConstraint<F>>,
-    mask_applied_polynomials: HashMap::<StepDifference<F>, Polynomial<F, Coefficients>>
+    pub mask_applied_polynomials: HashMap::<StepDifference<F>, Polynomial<F, Coefficients>>
 }
 
 impl<F: PrimeField> From<ARP<F>> for ALI<F> {
@@ -136,7 +136,6 @@ impl<F: PrimeField> From<ARP<F>> for ALI<F> {
 impl<F: PrimeField> ALI<F> {
     pub fn calculate_g(&mut self, alpha: F) -> Result<(), SynthesisError> {
         let mut current_coeff = F::one();
-        let generator = F::multiplicative_generator();
         let column_domain = Domain::<F>::new_for_size(self.num_steps as u64)?;
 
         fn evaluate_constraint_term_in_coset<F: PrimeField>(
@@ -149,11 +148,19 @@ impl<F: PrimeField> ALI<F> {
                 ConstraintTerm::Univariate(uni) => {
                     let mut base = substituted_witness.get(&uni.steps_difference).expect("should exist").clone();
                     let scaling_factor = uni.power.next_power_of_two() as usize;
-                    base.extend(scaling_factor)?;
-                    if uni.coeff != F::one() {
-                        base.scale(&worker, uni.coeff);
+                    base.extend(scaling_factor, &worker)?;
+                    let mut one = F::one();
+   
+                    if uni.coeff != one {
+                        one.negate();
+                        if uni.coeff == one {
+                            base.negate(&worker);
+                        } else {
+                            base.scale(&worker, uni.coeff);
+                        }
                     }
-                    let base = base.coset_fft(&worker);
+                    // let base = base.coset_fft(&worker);
+                    let base = base.fft(&worker);
 
                     base
                 },
@@ -170,15 +177,16 @@ impl<F: PrimeField> ALI<F> {
         let num_steps_sup = self.num_steps.next_power_of_two();
         let g_size = num_registers_sup * num_steps_sup * self.max_constraint_power;
 
-        let mut g_poly = Polynomial::<F, Values>::new_for_size(g_size).expect("should work");
-        let subterm = g_poly.clone();
+        let mut g_poly = Polynomial::<F, Coefficients>::new_for_size(g_size).expect("should work");
+        let subterm_values = Polynomial::<F, Values>::new_for_size(g_size).expect("should work");
 
         // such calls most likely will have start at 0 and num_steps = domain_size - 1
         fn divisor_for_dense_constraint_in_coset<F: PrimeField> (
             domain: &Domain<F>,
             start_at: u64,
             num_steps: u64,
-        ) -> F {
+        ) -> (F, usize) {
+            let mut divisor_degree = domain.size as usize;
             let mut c = F::multiplicative_generator().pow([domain.size]);
             c.sub_assign(&F::one());
 
@@ -191,6 +199,7 @@ impl<F: PrimeField> ALI<F> {
                 let mut tmp = F::multiplicative_generator();
                 tmp.sub_assign(&root);
                 d.mul_assign(&tmp);
+                divisor_degree -= 1;
 
                 root.mul_assign(&generator);
             }
@@ -201,13 +210,14 @@ impl<F: PrimeField> ALI<F> {
                 let mut tmp = F::multiplicative_generator();
                 tmp.sub_assign(&root);
                 d.mul_assign(&tmp);
+                divisor_degree -= 1;
 
                 root.mul_assign(&generator);
             }
 
             c.mul_assign(&d.inverse().expect("should exist"));
 
-            c
+            (c, divisor_degree)
         }
 
         // TODO: Check that witness values are evaluated at the coset, so division is valid
@@ -215,7 +225,7 @@ impl<F: PrimeField> ALI<F> {
         for constraint in self.constraints.iter() {
             current_coeff.mul_assign(&alpha);
             // first we need to calculate denominator at the value
-            let demonimator = match constraint.density {
+            let (denominator, divisor_degree) = match constraint.density {
                 ConstraintDensity::Dense => {
                     let start_at = constraint.start_at as u64;
 
@@ -225,6 +235,7 @@ impl<F: PrimeField> ALI<F> {
                         self.num_steps as u64
                     );
 
+                    println!("Divisor = {:?}", result);
                     result
                 },
                 _ => {
@@ -232,9 +243,11 @@ impl<F: PrimeField> ALI<F> {
                 }
             };
 
-            let demonimator = demonimator.inverse().expect("is non-zero");
+            let denominator = denominator.inverse().expect("is non-zero");
 
-            let mut subterm = subterm.clone();
+            let mut subterm_values = subterm_values.clone();
+
+            println!("Evaluating constraint {:?}", constraint);
 
             for term in constraint.terms.iter() {
                 let mut evaluated_term = evaluate_constraint_term_in_coset(
@@ -243,24 +256,35 @@ impl<F: PrimeField> ALI<F> {
                     &worker
                 )?;
 
-                let factor = subterm.as_ref().len() / evaluated_term.as_ref().len();
-
-                evaluated_term.extend(factor)?;
-
-                subterm.add_assign(&worker, &evaluated_term);
+                let factor = subterm_values.as_ref().len() / evaluated_term.as_ref().len();
+                evaluated_term.extend(factor, &worker)?;
+                subterm_values.add_assign(&worker, &evaluated_term);
             }
 
-            let mut alpha_by_demon = demonimator;
-            alpha_by_demon.mul_assign(&current_coeff);
+            println!("Subterm values = {:?}", subterm_values);
+            let subterm_coeffs = subterm_values.ifft(&worker);
+            println!("Subterm coeffs = {:?}", subterm_coeffs);
 
-            // TODO: join two methods
-            subterm.scale(&worker, alpha_by_demon);
-            g_poly.add_assign(&worker, &subterm);
+            let mut subterm_values_in_coset = subterm_coeffs.coset_fft(&worker);
+            println!("Subterm values in coset = {:?}", subterm_values_in_coset);
+
+            // do division at the values
+            let mut alpha_by_demon = denominator;
+            alpha_by_demon.mul_assign(&current_coeff);
+            subterm_values_in_coset.scale(&worker, alpha_by_demon);
+
+            println!("Subterm values in coset after division = {:?}", subterm_values_in_coset);
+
+            let mut subterm_coeffs = subterm_values_in_coset.icoset_fft(&worker);
+            let existing_degree = subterm_coeffs.as_ref().len() - 1;
+            let new_degree = existing_degree - divisor_degree;
+            subterm_coeffs.trim_to_degree(new_degree).expect("must reduce degree");
+            println!("Constraint alpha*P/Q coeffs = {:?}", subterm_coeffs);
+
+            g_poly.add_assign(&worker, &subterm_coeffs);
         }
 
-        let g_interpolant = g_poly.icoset_fft(&worker);
-
-        self.g_poly = Some(g_interpolant);
+        self.g_poly = Some(g_poly);
 
         Ok(())
     }
@@ -286,15 +310,17 @@ fn test_fib_conversion_into_ali() {
 
     let mut test_tracer = TestTraceSystem::<Fr>::new();
     fib.trace(&mut test_tracer).expect("should work");
-    test_tracer.calculate_witness(1, 1, 5);
+    test_tracer.calculate_witness(1, 1, 3);
     let mut arp = ARP::<Fr>::new(test_tracer);
     arp.route_into_single_witness_poly().expect("must work");
 
     let mut ali = ALI::from(arp);
-    let alpha = Fr::from_str("3").unwrap();
+    // println!("Mask applied polys = {:?}", ali.mask_applied_polynomials);
+    let alpha = Fr::from_str("123").unwrap();
     ali.calculate_g(alpha).expect("must work");
 
     let g_poly_interpolant = ali.g_poly.take().expect("is something");
+    println!("G coefficients = {:?}", g_poly_interpolant);
     let worker = Worker::new();
     let g_values = g_poly_interpolant.fft(&worker);
     println!("G values = {:?}", g_values);

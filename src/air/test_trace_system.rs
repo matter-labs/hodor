@@ -71,10 +71,10 @@ impl<F: PrimeField> TraceSystem<F> for TestTraceSystem<F> {
 
         Ok(Register::Constant(num_registers))
     }
+
     // tries to get aux register
-    fn get_aux_register(
-        &mut self, 
-        register: usize
+    fn allocate_aux_register(
+        &mut self
     ) -> Result<Register, TracingError>
     {
         let num_registers = self.aux_registers.len();
@@ -83,6 +83,7 @@ impl<F: PrimeField> TraceSystem<F> for TestTraceSystem<F> {
 
         Ok(Register::Aux(num_registers))
     }
+    
     fn add_constraint<WF>(
         &mut self, 
         constraint: Constraint<F>, 
@@ -201,20 +202,18 @@ impl<F: PrimeField> IntoAIR<F> for Fibonacci<F> {
             power: 1
         };
         // constraint for registed a_new = b;
-        fib_constraint_0 += b_register_now.clone(); 
-        fib_constraint_0 -= a_next_step;
+        fib_constraint_0 -= b_register_now.clone(); 
+        fib_constraint_0 += a_next_step;
         // b_new = a + b;
-        fib_constraint_1 += a_register_now; 
-        fib_constraint_1 += b_register_now; 
-        fib_constraint_1 -= b_next_step;
+        fib_constraint_1 -= a_register_now; 
+        fib_constraint_1 -= b_register_now; 
+        fib_constraint_1 += b_next_step;
 
         tracer.add_constraint_with_witness(fib_constraint_0, witness_derivation_function_0)?;
         tracer.add_constraint_with_witness(fib_constraint_1, witness_derivation_function_1)?;
 
 
         if self.final_a.is_some() {
-            let a = self.first_a.unwrap();
-            let b = self.first_b.unwrap();
             let final_a = self.final_a.unwrap();
             let at_step = self.at_step.unwrap();
 
@@ -263,7 +262,7 @@ impl<F: PrimeField> TestTraceSystem<F> {
             for generator in self.witness_generators.iter() {
                 let values = generator(&self).unwrap();
                 for (value, register, step_delta) in values.into_iter() {
-                    println!("Value of {:?} register at step {} is {}", register, i + step_delta, value);
+                    println!("Value of {:?} register after step {} (at row {}) = {}", register, i, i + step_delta, value);
                     match register {
                         Register::Register(reg_num) => {
                             let reg_witness = &mut self.registers_witness[reg_num];
@@ -285,7 +284,7 @@ impl<F: PrimeField> TestTraceSystem<F> {
 }
 
 #[test]
-fn test_fib() {
+fn test_fibonacci_air() {
     use crate::Fr;
 
     let fib = Fibonacci::<Fr> {
@@ -298,5 +297,5 @@ fn test_fib() {
 
     let mut test_tracer = TestTraceSystem::<Fr>::new();
     fib.trace(&mut test_tracer).expect("should work");
-    test_tracer.calculate_witness(1, 1, 5);
+    test_tracer.calculate_witness(1, 1, 3);
 }

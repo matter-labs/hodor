@@ -28,9 +28,7 @@ impl<F: PrimeField> ARP<F> {
         let num_steps_sup = num_steps.next_power_of_two();
 
         let witness_domain = Domain::<F>::new_for_size(num_registers_sup * num_steps_sup)?;
-        println!("Row mask base = {}", witness_domain.generator);
         let steps_domain = Domain::<F>::new_for_size(num_steps_sup)?;
-        println!("Column mask base = {}", steps_domain.generator);
 
         fn remap_univariate_term<F: PrimeField>(
             term: &mut UnivariateTerm<F>,
@@ -157,7 +155,7 @@ fn test_fib_conversion_into_arp() {
 
     let mut test_tracer = TestTraceSystem::<Fr>::new();
     fib.trace(&mut test_tracer).expect("should work");
-    test_tracer.calculate_witness(1, 1, 5);
+    test_tracer.calculate_witness(1, 1, 3);
     let mut arp = ARP::<Fr>::new(test_tracer);
     println!("Witness = {:?}", arp.witness);
     arp.route_into_single_witness_poly().expect("must work");

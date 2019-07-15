@@ -68,8 +68,57 @@ impl<F: PrimeField, P: PolynomialForm> Polynomial<F, P> {
         });
     }
 
+    pub fn negate(&mut self, worker: &Worker)
+    {
+        worker.scope(self.coeffs.len(), |scope, chunk| {
+            for v in self.coeffs.chunks_mut(chunk) {
+                scope.spawn(move |_| {
+                    for v in v.iter_mut() {
+                        v.negate();
+                    }
+                });
+            }
+        });
+    }
+
     // TODO: implement fancier FFT and implement separate LDE functionality
-    pub fn extend(&mut self, factor: usize) -> Result<(), SynthesisError> {
+    pub fn extend(&mut self, factor: usize, worker: &Worker) -> Result<(), SynthesisError> {
+        if factor == 1 {
+            return Ok(());
+        }
+        let next_power_of_two = factor.next_power_of_two();
+        if factor != next_power_of_two {
+            return Err(SynthesisError::Error);
+        }
+        
+        let new_size = self.coeffs.len() * factor;
+        let new_coeffs = vec![F::zero(); new_size];
+        let old_coeffs = std::mem::replace(&mut self.coeffs, new_coeffs);
+
+        // now we need to interleave the coefficients
+        worker.scope(old_coeffs.len(), |scope, chunk| {
+            for (i, (old, new)) in old_coeffs.chunks(chunk)
+                            .zip(self.coeffs.chunks_mut(chunk*factor))
+                            .enumerate() {
+                scope.spawn(move |_| {
+                    for (j, old_coeff) in old.iter().enumerate() {
+                        new[j*factor] = *old_coeff;
+                    }
+                });
+            }
+        });
+
+        let domain = Domain::new_for_size(new_size as u64)?;
+        self.exp = domain.power_of_two as u32;
+        let m = domain.size as usize;
+        self.omega = domain.generator;
+        self.omegainv = self.omega.inverse().unwrap();
+        self.minv = F::from_str(&format!("{}", m)).unwrap().inverse().unwrap();
+
+        Ok(())
+    }
+
+    pub fn pad_by_factor(&mut self, factor: usize) -> Result<(), SynthesisError> {
         if factor == 1 {
             return Ok(());
         }
@@ -87,6 +136,17 @@ impl<F: PrimeField, P: PolynomialForm> Polynomial<F, P> {
         self.omega = domain.generator;
         self.omegainv = self.omega.inverse().unwrap();
         self.minv = F::from_str(&format!("{}", m)).unwrap().inverse().unwrap();
+
+        Ok(())
+    }
+
+    pub fn trim_to_degree(&mut self, degree: usize) -> Result<(), SynthesisError> {
+        let size = self.coeffs.len();
+        if size <= degree + 1 {
+            return Ok(());
+        }
+        self.coeffs.truncate(degree + 1);
+        self.coeffs.resize(size, F::zero());
 
         Ok(())
     }

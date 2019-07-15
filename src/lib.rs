@@ -25,7 +25,7 @@ use ff::{Field, PrimeField, PrimeFieldRepr};
 // pub struct Fr(FrRepr);
 
 #[derive(PrimeField)]
-#[PrimeFieldModulus = "17"]
+#[PrimeFieldModulus = "257"]
 #[PrimeFieldGenerator = "3"]
 pub struct Fr(FrRepr);
 
