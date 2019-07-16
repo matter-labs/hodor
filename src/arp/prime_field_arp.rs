@@ -121,14 +121,38 @@ impl<F: PrimeField> ARP<F> {
 
         let worker = Worker::new();
         let mut flattened_witness = vec![F::zero(); (num_registers_sup * num_steps_sup) as usize];
-        for (w, reg_witness) in witness.into_iter().enumerate() {
-            for (t, value) in reg_witness.into_iter().enumerate() {
-                let idx = w + t*(num_registers_sup as usize);
-                unsafe {
-                    *flattened_witness.get_unchecked_mut(idx) = value;
-                }
+
+        let num_register_values = (&witness[0]).len();
+
+        worker.scope(num_register_values, |scope, chunk| {
+            // we take `chunks` registers and grab handle on the corresponding 
+            for (i, f) in flattened_witness.chunks_mut(chunk * (num_registers_sup as usize)).enumerate() {
+                let witness_iter = witness.iter();
+                scope.spawn(move |_| {
+                    let start = chunk * i;
+                    let mut end = chunk * (i+1);
+                    if end > num_register_values {
+                        end = num_register_values;
+                    }
+                    let range = end - start;
+                    for (reg_index, w) in witness_iter.clone().enumerate() {
+                        for j in 0..range {
+                            f[j*(num_registers_sup as usize) + reg_index] = w[j + start];
+                        }
+                    }
+                });
             }
-        }
+        });
+        
+        // for (w, reg_witness) in witness.into_iter().enumerate() {
+        //     for (t, value) in reg_witness.into_iter().enumerate() {
+        //         let idx = w + t*(num_registers_sup as usize);
+        //         unsafe {
+        //             *flattened_witness.get_unchecked_mut(idx) = value;
+        //         }
+        //     }
+        // }
+
         let poly = Polynomial::<F, _>::from_values(flattened_witness)?;
         let witness_poly = poly.ifft(&worker);
         self.witness_poly = Some(WitnessPolynomial::Single(witness_poly));

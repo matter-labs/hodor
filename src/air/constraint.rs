@@ -123,6 +123,17 @@ impl<F:PrimeField> AddAssign<PolyvariateTerm<F>> for Constraint<F> {
     }
 }
 
+impl<F:PrimeField> SubAssign<PolyvariateTerm<F>> for Constraint<F> {
+    fn sub_assign(&mut self, rhs: PolyvariateTerm<F>) {
+        let mut rhs = rhs;
+        rhs.coeff.negate();
+        if self.degree < rhs.total_degree {
+            self.degree = rhs.total_degree;
+        }
+        self.terms.push(ConstraintTerm::Polyvariate(rhs));
+    }
+}
+
 impl<F:PrimeField> AddAssign<UnivariateTerm<F>> for Constraint<F> {
     fn add_assign(&mut self, rhs: UnivariateTerm<F>) {
         if self.degree < rhs.power {

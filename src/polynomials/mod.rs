@@ -261,20 +261,20 @@ impl<F: PrimeField> Polynomial<F, Coefficients> {
     //     Ok(())
     // }
 
-    pub fn extend(&mut self, factor: usize, _worker: &Worker) -> Result<(), SynthesisError> {
-        if factor == 1 {
-            return Ok(());
-        }
-        let next_power_of_two = factor.next_power_of_two();
-        if factor != next_power_of_two {
-            return Err(SynthesisError::Error);
-        }
+    // pub fn extend(&mut self, factor: usize, _worker: &Worker) -> Result<(), SynthesisError> {
+    //     if factor == 1 {
+    //         return Ok(());
+    //     }
+    //     let next_power_of_two = factor.next_power_of_two();
+    //     if factor != next_power_of_two {
+    //         return Err(SynthesisError::Error);
+    //     }
         
-        let new_size = self.coeffs.len() * factor;
-        self.coeffs.resize(new_size, F::zero());
+    //     let new_size = self.coeffs.len() * factor;
+    //     self.coeffs.resize(new_size, F::zero());
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
     pub fn fft(mut self, worker: &Worker) -> Polynomial<F, Values>
     {
