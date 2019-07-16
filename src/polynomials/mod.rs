@@ -103,6 +103,26 @@ impl<F: PrimeField, P: PolynomialForm> Polynomial<F, P> {
         Ok(())
     }
 
+    pub fn pad_to_size(&mut self, new_size: usize) -> Result<(), SynthesisError> {
+        if new_size < self.coeffs.len() {
+            return Err(SynthesisError::Error);
+        }
+        let next_power_of_two = new_size.next_power_of_two();
+        if new_size != next_power_of_two {
+            return Err(SynthesisError::Error);
+        }
+        self.coeffs.resize(new_size, F::zero());
+
+        let domain = Domain::new_for_size(new_size as u64)?;
+        self.exp = domain.power_of_two as u32;
+        let m = domain.size as usize;
+        self.omega = domain.generator;
+        self.omegainv = self.omega.inverse().unwrap();
+        self.minv = F::from_str(&format!("{}", m)).unwrap().inverse().unwrap();
+
+        Ok(())
+    }
+
     pub fn trim_to_degree(&mut self, degree: usize) -> Result<(), SynthesisError> {
         let size = self.coeffs.len();
         if size <= degree + 1 {
@@ -144,8 +164,69 @@ impl<F: PrimeField> Polynomial<F, Coefficients> {
         })
     }
 
-    // // TODO: implement fancier FFT and implement separate LDE functionality
-    // pub fn extend(&mut self, factor: usize, worker: &Worker) -> Result<(), SynthesisError> {
+    pub fn from_roots(roots: Vec<F>, worker: &Worker) -> Result<Polynomial<F, Coefficients>, SynthesisError>
+    {
+
+        let coeffs_len = roots.len() + 1;
+
+        let domain = Domain::<F>::new_for_size(coeffs_len as u64)?;
+        let num_threads = worker.cpus;
+
+        // vector of vectors of polynomial coefficients for subproducts
+        let mut subterms = vec![vec![]; num_threads];
+
+        worker.scope(roots.len(), |scope, chunk| {
+            for (r, s) in roots.chunks(chunk)
+                    .zip(subterms.chunks_mut(1)) {
+                scope.spawn(move |_| {
+                    for r in r.iter() {
+                        if s[0].len() == 0 {
+                            let mut tmp = *r;
+                            tmp.negate();
+                            s[0] = vec![tmp, F::one()];
+                        } else {
+                            let mut tmp = Vec::with_capacity(s[0].len() + 1);
+                            tmp.push(F::zero());
+                            tmp.extend(s[0].clone());
+                            for (c, n) in s[0].iter().zip(tmp.iter_mut()) {
+                                let mut t = *c;
+                                t.mul_assign(&r);
+                                n.sub_assign(&t);
+                            }
+                            s[0] = tmp;
+                        }
+                    }
+                });
+            }
+        });
+
+        // now we have subproducts in a coefficient form
+
+        let mut result: Option<Polynomial<F, Values>> = None;
+        let result_len = domain.size as usize;
+
+        for s in subterms.into_iter() {
+            if s.len() == 0 {
+                continue;
+            }
+            let mut t = Polynomial::<F, Coefficients>::from_coeffs(s)?;
+            let factor = result_len / t.as_ref().len();
+            t.pad_by_factor(factor)?;
+            let t = t.fft(&worker);
+            if let Some(res) = result.as_mut() {
+                res.mul_assign(&worker, &t);
+            } else {
+                result = Some(t);
+            }
+        }
+
+        let result = result.expect("is some");
+        let result = result.ifft(&worker);
+
+        Ok(result)
+    }
+
+    // pub fn sparse_distribute(&mut self, factor: usize, worker: &Worker) -> Result<(), SynthesisError> {
     //     if factor == 1 {
     //         return Ok(());
     //     }

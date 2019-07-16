@@ -119,7 +119,7 @@ pub fn interpolate<F: Field>(
                 continue;
             }
 
-            let mut diff = x_k.clone();
+            let mut diff = *x_k;
             diff.sub_assign(&x_j);
             demoninator.mul_assign(&diff);
 
@@ -129,7 +129,7 @@ pub fn interpolate<F: Field>(
                 contribution.get_mut(1).expect("must have enough coefficients").add_assign(&F::one());
             } else {
                 let mul_by_minus_x_j: Vec<F> = contribution.iter().map(|el| {
-                    let mut tmp = el.clone();
+                    let mut tmp = *el;
                     tmp.mul_assign(&x_j);
                     tmp.negate();
 
