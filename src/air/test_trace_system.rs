@@ -1,19 +1,20 @@
 use super::*;
 
-use std::ops::{AddAssign, SubAssign, MulAssign};
-
 pub struct TestTraceSystem<F: PrimeField> {
     pub pc_registers: Vec<String>,
     pub registers: Vec<String>,
     pub constant_registers: Vec<String>,
     pub aux_registers: Vec<String>,
+
     pub pc_registers_witness: Vec<Vec<F>>,
     pub registers_witness: Vec<Vec<F>>,
     pub constant_registers_witness: Vec<Vec<F>>,
+    pub aux_registers_witness: Vec<Vec<F>>,
+
     register_generators: Vec<Box<FnOnce(Vec<(F, Register, usize)>) -> Result<Vec<(F, Register, usize)>, TracingError> > >,
     witness_generators: Vec<Box<Fn(&Self) -> Result<Vec<(F, Register, usize)>, TracingError> > >,
     constant_register_generators: Vec<Box<FnOnce(usize) -> Result<(F, bool), TracingError> > >,
-    pub aux_registers_witness: Vec<Vec<F>>,
+
     pub constraints: Vec<Constraint<F>>,
     pub boundary_constraints: Vec<BoundaryConstraint<F>>,
     pub current_step: usize
@@ -172,33 +173,39 @@ impl<F: PrimeField> IntoAIR<F> for Fibonacci<F> {
         let mut fib_constraint_0 = Constraint::default();
         fib_constraint_0.start_at = 0;
         fib_constraint_0.density = ConstraintDensity::Dense;
+
         let mut fib_constraint_1 = Constraint::default();
         fib_constraint_1.start_at = 0;
         fib_constraint_1.density = ConstraintDensity::Dense;
+
         let a_register_now = UnivariateTerm::<F> {
             coeff: F::one(),
             register: a_register,
             steps_difference: StepDifference::Steps(0),
             power: 1
         };
+
         let b_register_now = UnivariateTerm::<F> {
             coeff: F::one(),
             register: b_register,
             steps_difference: StepDifference::Steps(0),
             power: 1
         };
+
         let a_next_step = UnivariateTerm::<F> {
             coeff: F::one(),
             register: a_register,
             steps_difference: StepDifference::Steps(1),
             power: 1
         };
+
         let b_next_step = UnivariateTerm::<F> {
             coeff: F::one(),
             register: b_register,
             steps_difference: StepDifference::Steps(1),
             power: 1
         };
+
         // constraint for registed a_new = b;
         fib_constraint_0 -= b_register_now.clone(); 
         fib_constraint_0 += a_next_step;

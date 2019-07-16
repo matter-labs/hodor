@@ -16,7 +16,7 @@ impl<F: PrimeField> ARP<F> {
     /// - make interpolating polynomial f
     /// - add masking coefficients for constraints
     /// - keep boundary constraints as it is
-    pub fn route_into_single_witness_poly(&mut self ) -> Result<(), SynthesisError> {
+    pub fn route_into_single_witness_poly(&mut self) -> Result<(), SynthesisError> {
         if self.witness.is_some() {
             self.make_witness_polymonial()?;
         }

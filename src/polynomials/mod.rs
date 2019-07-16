@@ -144,8 +144,43 @@ impl<F: PrimeField> Polynomial<F, Coefficients> {
         })
     }
 
-     // TODO: implement fancier FFT and implement separate LDE functionality
-    pub fn extend(&mut self, factor: usize, worker: &Worker) -> Result<(), SynthesisError> {
+    // // TODO: implement fancier FFT and implement separate LDE functionality
+    // pub fn extend(&mut self, factor: usize, worker: &Worker) -> Result<(), SynthesisError> {
+    //     if factor == 1 {
+    //         return Ok(());
+    //     }
+    //     let next_power_of_two = factor.next_power_of_two();
+    //     if factor != next_power_of_two {
+    //         return Err(SynthesisError::Error);
+    //     }
+        
+    //     let new_size = self.coeffs.len() * factor;
+    //     let new_coeffs = vec![F::zero(); new_size];
+    //     let old_coeffs = std::mem::replace(&mut self.coeffs, new_coeffs);
+
+    //     // now we need to interleave the coefficients
+    //     worker.scope(old_coeffs.len(), |scope, chunk| {
+    //         for (old, new) in old_coeffs.chunks(chunk)
+    //                         .zip(self.coeffs.chunks_mut(chunk*factor)) {
+    //             scope.spawn(move |_| {
+    //                 for (j, old_coeff) in old.iter().enumerate() {
+    //                     new[j*factor] = *old_coeff;
+    //                 }
+    //             });
+    //         }
+    //     });
+
+    //     let domain = Domain::new_for_size(new_size as u64)?;
+    //     self.exp = domain.power_of_two as u32;
+    //     let m = domain.size as usize;
+    //     self.omega = domain.generator;
+    //     self.omegainv = self.omega.inverse().unwrap();
+    //     self.minv = F::from_str(&format!("{}", m)).unwrap().inverse().unwrap();
+
+    //     Ok(())
+    // }
+
+    pub fn extend(&mut self, factor: usize, _worker: &Worker) -> Result<(), SynthesisError> {
         if factor == 1 {
             return Ok(());
         }
@@ -155,27 +190,7 @@ impl<F: PrimeField> Polynomial<F, Coefficients> {
         }
         
         let new_size = self.coeffs.len() * factor;
-        let new_coeffs = vec![F::zero(); new_size];
-        let old_coeffs = std::mem::replace(&mut self.coeffs, new_coeffs);
-
-        // now we need to interleave the coefficients
-        worker.scope(old_coeffs.len(), |scope, chunk| {
-            for (old, new) in old_coeffs.chunks(chunk)
-                            .zip(self.coeffs.chunks_mut(chunk*factor)) {
-                scope.spawn(move |_| {
-                    for (j, old_coeff) in old.iter().enumerate() {
-                        new[j*factor] = *old_coeff;
-                    }
-                });
-            }
-        });
-
-        let domain = Domain::new_for_size(new_size as u64)?;
-        self.exp = domain.power_of_two as u32;
-        let m = domain.size as usize;
-        self.omega = domain.generator;
-        self.omegainv = self.omega.inverse().unwrap();
-        self.minv = F::from_str(&format!("{}", m)).unwrap().inverse().unwrap();
+        self.coeffs.resize(new_size, F::zero());
 
         Ok(())
     }
@@ -202,31 +217,11 @@ impl<F: PrimeField> Polynomial<F, Coefficients> {
         self.fft(worker)
     }
 
-    /// This evaluates t(tau) for this domain, which is
-    /// tau^m - 1 for these radix-2 domains.
-    pub fn z(&self, tau: &F) -> F {
-        let mut tmp = tau.pow(&[self.coeffs.len() as u64]);
-        tmp.sub_assign(&F::one());
-
-        tmp
-    }
-
-    /// The target polynomial is the zero polynomial in our
-    /// evaluation domain, so we must perform division over
-    /// a coset.
-    pub fn divide_by_z_on_coset(&mut self, worker: &Worker)
+    pub fn coset_fft_for_generator(mut self, worker: &Worker, gen: F) -> Polynomial<F, Values>
     {
-        let i = self.z(&F::multiplicative_generator()).inverse().unwrap();
+        self.distribute_powers(worker, gen);
 
-        worker.scope(self.coeffs.len(), |scope, chunk| {
-            for v in self.coeffs.chunks_mut(chunk) {
-                scope.spawn(move |_| {
-                    for v in v {
-                        v.mul_assign(&i);
-                    }
-                });
-            }
-        });
+        self.fft(worker)
     }
 
     pub fn add_assign(&mut self, worker: &Worker, other: &Polynomial<F, Coefficients>) {
@@ -360,6 +355,14 @@ impl<F: PrimeField> Polynomial<F, Values> {
     pub fn icoset_fft(self, worker: &Worker) -> Polynomial<F, Coefficients>
     {
         let geninv = self.geninv;
+        let mut res = self.ifft(worker);
+        res.distribute_powers(worker, geninv);
+
+        res
+    }
+
+    pub fn icoset_fft_for_generator(self, worker: &Worker, geninv: F) -> Polynomial<F, Coefficients>
+    {
         let mut res = self.ifft(worker);
         res.distribute_powers(worker, geninv);
 

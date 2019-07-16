@@ -77,11 +77,21 @@ impl<F: PrimeField> DeepALI<F> {
             self.f_poly.evaluate_at(&worker, *m)
         }).collect();
 
+        let mut points = vec![];
+
         for (z_m, f_at_z_m) in z_m.iter()
                                 .zip(f_at_z_m.iter()) 
         {
-            println!("F at zM: zM = {}, F = {}", z_m, f_at_z_m);
+            points.push((*z_m, *f_at_z_m));
+            // println!("F at zM: zM = {}, F = {}", z_m, f_at_z_m);
         }
+
+        // now we can interpolate F(z_m) as u in DEEP-ALI notations
+        // TODO: change to custom coset evaluation - interpolation
+
+        let u_coeffs = crate::utils::poly::interpolate(&points[..]).expect("must exist");
+        
+        println!("U coeffs = {:?}", u_coeffs);
 
         Ok(())
     }
