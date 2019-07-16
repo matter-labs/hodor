@@ -16,7 +16,7 @@ pub enum Register {
     Aux(usize)
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum ConstraintDensity {
     Dense,
     Sparse(usize)

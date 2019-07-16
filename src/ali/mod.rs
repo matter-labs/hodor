@@ -38,6 +38,7 @@ pub struct ALI<F: PrimeField> {
     pub constraints: Vec<Constraint<F>>,
     pub boundary_constraints: Vec<BoundaryConstraint<F>>,
     pub mask_applied_polynomials: HashMap::<StepDifference<F>, Polynomial<F, Coefficients>>,
+    pub inversed_divisors_in_cosets: HashMap::<ConstraintDensity, Polynomial<F, Values>>,
     pub column_domain: Domain::<F>,
     pub full_trace_domain: Domain::<F>
 }
@@ -144,6 +145,7 @@ impl<F: PrimeField> From<ARP<F>> for ALI<F> {
             max_constraint_power: max_constraint_power as usize,
             boundary_constraints: arp.boundary_constraints,
             mask_applied_polynomials: mask_applied_polynomials,
+            inversed_divisors_in_cosets: HashMap::new(),
             column_domain,
             full_trace_domain
         }
@@ -243,7 +245,6 @@ impl<F: PrimeField> ALI<F> {
         fn inverse_divisor_for_dense_constraint_in_coset<F: PrimeField> (
             column_domain: &Domain<F>,
             term_evaluation_domain: &Domain<F>,
-            alpha: F,
             start_at: u64,
             num_steps: u64,
             worker: &Worker
@@ -307,9 +308,7 @@ impl<F: PrimeField> ALI<F> {
                         let mut x = evaluation_domain_generator.pow([(i*chunk) as u64]);
                         x.mul_assign(&multiplicative_generator);
                         for v in inv_divis.iter_mut() {
-                            let mut c_inverse_by_alpha = *v;
-                            c_inverse_by_alpha.mul_assign(&alpha);
-                            let mut d = c_inverse_by_alpha;
+                            let mut d = *v;
                             for root in roots_iter_outer.clone() {
                                 // (X - root)
                                 let mut tmp = x;
@@ -361,26 +360,38 @@ impl<F: PrimeField> ALI<F> {
             
             let mut subterm_coefficients = subterm_coefficients.clone();
 
-            // first we need to calculate denominator at the value
-            let (inverse_divisors, _divisor_degree) = match constraint.density {
-                ConstraintDensity::Dense => {
-                    let start_at = constraint.start_at as u64;
-
-                    let result = inverse_divisor_for_dense_constraint_in_coset(
-                        &self.column_domain,
-                        &subterm_domain, 
-                        current_coeff,
-                        start_at,
-                        self.num_steps as u64,
-                        &worker
-                    )?;
-
-                    result
+            let mut inverse_divisors = match self.inversed_divisors_in_cosets.get(&constraint.density) {
+                Some(div) => {
+                    div.clone()
                 },
                 _ => {
-                    unimplemented!();
+                    let (inverse_divisors, _divisor_degree) = match constraint.density {
+                        ConstraintDensity::Dense => {
+                            let start_at = constraint.start_at as u64;
+
+                            let result = inverse_divisor_for_dense_constraint_in_coset(
+                                &self.column_domain,
+                                &subterm_domain, 
+                                start_at,
+                                self.num_steps as u64,
+                                &worker
+                            )?;
+
+                            result
+                        },
+                        _ => {
+                            unimplemented!();
+                        }
+                    };
+                    self.inversed_divisors_in_cosets.insert(constraint.density, inverse_divisors.clone());
+
+                    inverse_divisors
                 }
             };
+
+            // first we need to calculate denominator at the value
+
+            inverse_divisors.scale(&worker, current_coeff);
 
             for term in constraint.terms.iter() {
                 let mut evaluated_term = evaluate_constraint_term_into_coefficients(
