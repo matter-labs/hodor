@@ -1,1 +1,1 @@
-mod vdf;
+pub(crate) mod vdf;

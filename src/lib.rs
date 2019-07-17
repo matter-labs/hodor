@@ -2,11 +2,15 @@ extern crate ff;
 extern crate byteorder;
 extern crate rand;
 extern crate hex;
-extern crate serde;
-extern crate serde_derive;
+// extern crate serde;
+// extern crate serde_derive;
 extern crate blake2_rfc;
 extern crate tiny_keccak;
 extern crate crypto;
+extern crate blake2b_simd;
+extern crate blake2s_simd;
+#[macro_use]
+extern crate lazy_static;
 
 pub mod air;
 pub mod arp;
@@ -16,6 +20,7 @@ pub mod fft;
 pub mod domains;
 pub mod polynomials;
 pub mod ali;
+pub mod iop;
 
 mod experiments;
 
