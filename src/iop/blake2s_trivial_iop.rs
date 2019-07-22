@@ -14,7 +14,7 @@ lazy_static! {
 }
 
 
-struct Blake2sLeafEncoder<F: PrimeField> {
+pub struct Blake2sLeafEncoder<F: PrimeField> {
     _marker: std::marker::PhantomData<F>
 }
 
@@ -48,16 +48,18 @@ impl<F: PrimeField> HashEncoder<F> for Blake2sLeafEncoder<F>{
         let value = *value;
         let mut repr = F::Repr::default();
         let shaving_mask: u64 = 0xffffffffffffffff >> Self::SHAVE_BITS;
-        repr.read_le(&value[..]).expect("will read");
+        repr.read_be(&value[..]).expect("will read");
+        // repr.read_le(&value[..]).expect("will read");
         let last_limb_idx = repr.as_ref().len() - 1;
         repr.as_mut()[last_limb_idx] &= shaving_mask;
-        let value = F::from_raw_repr(repr).expect("in a field");
+        // let value = F::from_raw_repr(repr).expect("in a field");
+        let value = F::from_repr(repr).expect("in a field");
 
         value
     }
 }
 
-struct Blake2sTreeHasher<F: PrimeField> {
+pub struct Blake2sTreeHasher<F: PrimeField> {
     encoder: Blake2sLeafEncoder<F>
 }
 
@@ -95,7 +97,7 @@ impl<F: PrimeField> IopTreeHasher<F> for Blake2sTreeHasher<F> {
     }
 }
 
-struct Blake2sIopTree<F: PrimeField> {
+pub struct Blake2sIopTree<F: PrimeField> {
     nodes: Vec< < Blake2sTreeHasher<F> as IopTreeHasher<F> >::HashOutput >,
     hasher: Blake2sTreeHasher<F>
 }
