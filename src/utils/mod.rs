@@ -1,5 +1,5 @@
 use tiny_keccak::Keccak;
-use blake2_rfc::blake2s::Blake2s;
+use blake2s_simd;
 use crypto::sha2::Sha256;
 use crypto::digest::Digest;
 
@@ -12,33 +12,33 @@ pub trait Hasher: Sized + Clone {
     fn finalize(&mut self) -> Vec<u8>;
 }
 
-#[derive(Clone)]
-pub struct BlakeHasher {
-    h: Blake2s
-}
+// #[derive(Clone)]
+// pub struct BlakeHasher {
+//     h: Blake2s
+// }
 
-impl Hasher for BlakeHasher {
-    fn new(personalization: &[u8]) -> Self {
-        let h = Blake2s::with_params(32, &[], &[], personalization);
+// impl Hasher for BlakeHasher {
+//     fn new(personalization: &[u8]) -> Self {
+//         let h = Blake2s::with_params(32, &[], &[], personalization);
 
-        Self {
-            h: h
-        }
-    }
+//         Self {
+//             h: h
+//         }
+//     }
 
-    fn update(&mut self, data: &[u8]) {
-        self.h.update(data);
-    }
+//     fn update(&mut self, data: &[u8]) {
+//         self.h.update(data);
+//     }
 
-    fn finalize(&mut self) -> Vec<u8> {
-        let new_h = Blake2s::with_params(32, &[], &[], &[]);
-        let h = std::mem::replace(&mut self.h, new_h);
+//     fn finalize(&mut self) -> Vec<u8> {
+//         let new_h = Blake2s::with_params(32, &[], &[], &[]);
+//         let h = std::mem::replace(&mut self.h, new_h);
 
-        let result = h.finalize();
+//         let result = h.finalize();
 
-        result.as_ref().to_vec().clone()
-    }
-}
+//         result.as_ref().to_vec().clone()
+//     }
+// }
 
 #[derive(Clone)]
 pub struct Keccak256Hasher {

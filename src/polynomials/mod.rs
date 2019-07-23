@@ -276,6 +276,18 @@ impl<F: PrimeField> Polynomial<F, Coefficients> {
     //     Ok(())
     // }
 
+    pub fn lde(self, worker: &Worker, factor: usize) -> Result<Polynomial<F, Values>, SynthesisError> {
+        assert!(factor.is_power_of_two());
+        let new_size = self.coeffs.len() * factor;
+        let domain = Domain::new_for_size(new_size as u64)?;
+
+        let mut lde = self.coeffs;
+        lde.resize(new_size as usize, F::zero());
+        crate::fft::lde::best_lde(&mut lde, worker, &domain.generator, domain.power_of_two as u32, factor);
+
+        Polynomial::from_values(lde)
+    }
+
     pub fn fft(mut self, worker: &Worker) -> Polynomial<F, Values>
     {
         best_fft(&mut self.coeffs, worker, &self.omega, self.exp);
