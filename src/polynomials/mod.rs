@@ -28,6 +28,10 @@ pub struct Polynomial<F: PrimeField, P: PolynomialForm> {
 
 
 impl<F: PrimeField, P: PolynomialForm> Polynomial<F, P> {
+    pub fn size(&self) -> usize {
+        self.coeffs.len()
+    }
+
     pub fn as_ref(&self) -> &[F] {
         &self.coeffs
     }
@@ -226,6 +230,69 @@ impl<F: PrimeField> Polynomial<F, Coefficients> {
         Ok(result)
     }
 
+    pub fn evaluate_at_domain_for_degree_one(
+        &self, 
+        worker: &Worker, 
+        domain_size: u64
+    ) -> Result<Polynomial<F, Values>, SynthesisError> {
+        assert_eq!(self.coeffs.len(), 2);
+        let alpha = self.coeffs[1];
+        let c = self.coeffs[0];
+
+        let domain = Domain::<F>::new_for_size(domain_size)?;
+
+        let mut result = vec![F::zero(); domain.size as usize];
+        let g = domain.generator;
+        worker.scope(result.len(), |scope, chunk| {
+            for (i, v) in result.chunks_mut(chunk).enumerate() {
+                scope.spawn(move |_| {
+                    let mut u = g.pow(&[(i * chunk) as u64]);
+                    for v in v.iter_mut() {
+                        let mut tmp = alpha;
+                        tmp.mul_assign(&u);
+                        tmp.add_assign(&c);
+                        *v = tmp;
+                        u.mul_assign(&g);
+                    }
+                });
+            }
+        });
+
+        Polynomial::from_values(result)
+    }
+
+    pub fn coset_evaluate_at_domain_for_degree_one(
+        &self, 
+        worker: &Worker, 
+        domain_size: u64
+    ) -> Result<Polynomial<F, Values>, SynthesisError> {
+        assert_eq!(self.coeffs.len(), 2);
+        let alpha = self.coeffs[1];
+        let c = self.coeffs[0];
+
+        let domain = Domain::<F>::new_for_size(domain_size)?;
+
+        let mut result = vec![F::zero(); domain.size as usize];
+        let g = domain.generator;
+        worker.scope(result.len(), |scope, chunk| {
+            for (i, v) in result.chunks_mut(chunk).enumerate() {
+                scope.spawn(move |_| {
+                    let mut u = g.pow(&[(i * chunk) as u64]);
+                    u.mul_assign(&F::multiplicative_generator());
+                    for v in v.iter_mut() {
+                        let mut tmp = alpha;
+                        tmp.mul_assign(&u);
+                        tmp.add_assign(&c);
+                        *v = tmp;
+                        u.mul_assign(&g);
+                    }
+                });
+            }
+        });
+
+        Polynomial::from_values(result)
+    }
+
     // pub fn sparse_distribute(&mut self, factor: usize, worker: &Worker) -> Result<(), SynthesisError> {
     //     if factor == 1 {
     //         return Ok(());
@@ -277,7 +344,27 @@ impl<F: PrimeField> Polynomial<F, Coefficients> {
     // }
 
     pub fn lde(self, worker: &Worker, factor: usize) -> Result<Polynomial<F, Values>, SynthesisError> {
+        if factor == 1 {
+            return Ok(self.fft(&worker));
+        }
         assert!(factor.is_power_of_two());
+        let new_size = self.coeffs.len() * factor;
+        let domain = Domain::new_for_size(new_size as u64)?;
+
+        let mut lde = self.coeffs;
+        lde.resize(new_size as usize, F::zero());
+        crate::fft::lde::best_lde(&mut lde, worker, &domain.generator, domain.power_of_two as u32, factor);
+
+        Polynomial::from_values(lde)
+    }
+
+    pub fn coset_lde(mut self, worker: &Worker, factor: usize) -> Result<Polynomial<F, Values>, SynthesisError> {
+        if factor == 1 {
+            return Ok(self.coset_fft(&worker));
+        }
+        assert!(factor.is_power_of_two());
+        self.distribute_powers(worker, F::multiplicative_generator());
+
         let new_size = self.coeffs.len() * factor;
         let domain = Domain::new_for_size(new_size as u64)?;
 
@@ -318,13 +405,29 @@ impl<F: PrimeField> Polynomial<F, Coefficients> {
     }
 
     pub fn add_assign(&mut self, worker: &Worker, other: &Polynomial<F, Coefficients>) {
-        assert_eq!(self.coeffs.len(), other.coeffs.len());
+        assert!(self.coeffs.len() >= other.coeffs.len());
 
-        worker.scope(self.coeffs.len(), |scope, chunk| {
+        worker.scope(other.coeffs.len(), |scope, chunk| {
             for (a, b) in self.coeffs.chunks_mut(chunk).zip(other.coeffs.chunks(chunk)) {
                 scope.spawn(move |_| {
                     for (a, b) in a.iter_mut().zip(b.iter()) {
                         a.add_assign(&b);
+                    }
+                });
+            }
+        });
+    }
+
+    pub fn add_assign_scaled(&mut self, worker: &Worker, other: &Polynomial<F, Coefficients>, scaling: &F) {
+        assert!(self.coeffs.len() >= other.coeffs.len());
+
+        worker.scope(other.coeffs.len(), |scope, chunk| {
+            for (a, b) in self.coeffs.chunks_mut(chunk).zip(other.coeffs.chunks(chunk)) {
+                scope.spawn(move |_| {
+                    for (a, b) in a.iter_mut().zip(b.iter()) {
+                        let mut tmp = *b;
+                        tmp.mul_assign(&scaling);
+                        a.add_assign(&tmp);
                     }
                 });
             }

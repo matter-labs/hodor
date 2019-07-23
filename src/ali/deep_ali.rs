@@ -105,27 +105,30 @@ impl<F: PrimeField> DeepALI<F> {
 
         // now we can interpolate F(z_m) as U in DEEP-ALI notations
         let u_coeffs = crate::utils::poly::interpolate(&points[..]).expect("must exist");
-        let mut u_poly_coeffs = Polynomial::from_coeffs(u_coeffs)?;
+        let u_poly_coeffs = Polynomial::from_coeffs(u_coeffs)?;
 
-        let mut z_coeffs = Polynomial::from_roots(z_m.clone(), &worker)?;
+        let z_coeffs = Polynomial::from_roots(z_m.clone(), &worker)?;
 
-        let d_size = f_poly_lde_values.as_ref().len();
-        let d_prime_size = g_poly_lde_values.as_ref().len();
-
-        z_coeffs.pad_to_size(d_size)?;
-        u_poly_coeffs.pad_to_size(d_size)?;
+        let d_size = f_poly_lde_values.size();
+        let d_prime_size = g_poly_lde_values.size();
 
         // evaluate h1
 
         let mut h1_values = f_poly_lde_values;
 
         {
-            let u_poly_values = u_poly_coeffs.fft(&worker);
+            let u_poly_size = u_poly_coeffs.size();
+            let u_poly_values = u_poly_coeffs.lde(&worker, d_size / u_poly_size)?;
+            // u_poly_coeffs.pad_to_size(d_size)?;
+            // let u_poly_values = u_poly_coeffs.fft(&worker);
             h1_values.sub_assign(&worker, &u_poly_values);
         }
 
         {
-            let mut z_poly_values = z_coeffs.fft(&worker);
+            let z_poly_size = z_coeffs.size();
+            let mut z_poly_values = z_coeffs.lde(&worker, d_size / z_poly_size)?;
+            // let mut z_poly_values = z_coeffs.fft(&worker);
+            // z_coeffs.pad_to_size(d_size)?;
             z_poly_values.batch_inversion(&worker);
             h1_values.mul_assign(&worker, &z_poly_values);
         }
@@ -218,6 +221,18 @@ fn test_fib_conversion_into_deep_ali() {
     let g_lde_values = g_lde.fft(&worker);
 
     deep_ali.make_deep(f_lde_values, g_lde_values, z).expect("must work");
-    println!("H1 = {:?}", deep_ali.h_1_poly);
-    println!("H2 = {:?}", deep_ali.h_2_poly);
+
+    let h1_0 = deep_ali.h_1_poly.as_ref().unwrap().as_ref()[0].into_repr().as_ref()[0];
+    let h1_1 = deep_ali.h_1_poly.as_ref().unwrap().as_ref()[1].into_repr().as_ref()[0];
+
+    let h2_0 = deep_ali.h_2_poly.as_ref().unwrap().as_ref()[0].into_repr().as_ref()[0];
+    let h2_1 = deep_ali.h_2_poly.as_ref().unwrap().as_ref()[1].into_repr().as_ref()[0];
+
+    assert_eq!(h1_0, 119);
+    assert_eq!(h1_1, 87);
+    assert_eq!(h2_0, 99);
+    assert_eq!(h2_1, 226);
+
+    // println!("H1 = {:?}", deep_ali.h_1_poly);
+    // println!("H2 = {:?}", deep_ali.h_2_poly);
 }

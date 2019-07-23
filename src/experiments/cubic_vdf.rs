@@ -298,7 +298,7 @@ fn try_prove_cubic_vdf() {
     arp.route_into_single_witness_poly().expect("must work");
 
     let f_witness_interpolant = arp.witness_poly.clone().expect("is something");
-    let mut f_witness_interpolant = match f_witness_interpolant {
+    let f_witness_interpolant = match f_witness_interpolant {
         WitnessPolynomial::Single(f) => {
             f
         },
@@ -307,8 +307,7 @@ fn try_prove_cubic_vdf() {
         }
     };
 
-    f_witness_interpolant.pad_by_factor(lde_factor).expect("must work");
-    let f_lde = f_witness_interpolant.fft(&worker);
+    let f_lde = f_witness_interpolant.lde(&worker, lde_factor).expect("is something");
     println!("F LDE is done after {} ms", start.elapsed().as_millis());
     let start = Instant::now();
 
@@ -324,9 +323,8 @@ fn try_prove_cubic_vdf() {
     println!("G is calculated after {} ms", start.elapsed().as_millis());
     let start = Instant::now();
 
-    let mut g_poly_interpolant = ali.g_poly.clone().expect("is something");
-    g_poly_interpolant.pad_by_factor(lde_factor).expect("must work");
-    let g_lde = g_poly_interpolant.fft(&worker);
+    let g_poly_interpolant = ali.g_poly.clone().expect("is something");
+    let g_lde = g_poly_interpolant.lde(&worker, lde_factor).expect("is something");
 
     println!("G LDE is done after {} ms", start.elapsed().as_millis());
     let start = Instant::now();
