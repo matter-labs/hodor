@@ -353,7 +353,7 @@ impl<F: PrimeField> Polynomial<F, Coefficients> {
 
         let mut lde = self.coeffs;
         lde.resize(new_size as usize, F::zero());
-        crate::fft::lde::best_lde(&mut lde, worker, &domain.generator, domain.power_of_two as u32, factor);
+        crate::fft::best_lde(&mut lde, worker, &domain.generator, domain.power_of_two as u32, factor);
 
         Polynomial::from_values(lde)
     }
@@ -370,7 +370,7 @@ impl<F: PrimeField> Polynomial<F, Coefficients> {
 
         let mut lde = self.coeffs;
         lde.resize(new_size as usize, F::zero());
-        crate::fft::lde::best_lde(&mut lde, worker, &domain.generator, domain.power_of_two as u32, factor);
+        crate::fft::best_lde(&mut lde, worker, &domain.generator, domain.power_of_two as u32, factor);
 
         Polynomial::from_values(lde)
     }

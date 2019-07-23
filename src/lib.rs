@@ -6,8 +6,11 @@ extern crate tiny_keccak;
 extern crate crypto;
 extern crate blake2b_simd;
 extern crate blake2s_simd;
-#[macro_use]
-extern crate lazy_static;
+#[macro_use] extern crate lazy_static;
+#[macro_use] extern crate cfg_if;
+
+// extern crate flame;
+// #[macro_use] extern crate flamer;
 
 pub mod air;
 pub mod arp;
