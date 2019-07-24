@@ -20,7 +20,7 @@ pub struct Polynomial<F: PrimeField, P: PolynomialForm> {
     coeffs: Vec<F>,
     exp: u32,
     pub omega: F,
-    omegainv: F,
+    pub omegainv: F,
     geninv: F,
     minv: F,
     _marker: std::marker::PhantomData<P>
@@ -213,10 +213,9 @@ impl<F: PrimeField> Polynomial<F, Coefficients> {
             if s.len() == 0 {
                 continue;
             }
-            let mut t = Polynomial::<F, Coefficients>::from_coeffs(s)?;
-            let factor = result_len / t.as_ref().len();
-            t.pad_by_factor(factor)?;
-            let t = t.fft(&worker);
+            let t = Polynomial::<F, Coefficients>::from_coeffs(s)?;
+            let factor = result_len / t.size();
+            let t = t.lde(&worker, factor)?;
             if let Some(res) = result.as_mut() {
                 res.mul_assign(&worker, &t);
             } else {
@@ -436,9 +435,9 @@ impl<F: PrimeField> Polynomial<F, Coefficients> {
 
     /// Perform O(n) subtraction of one polynomial from another in the domain.
     pub fn sub_assign(&mut self, worker: &Worker, other: &Polynomial<F, Coefficients>) {
-        assert_eq!(self.coeffs.len(), other.coeffs.len());
+        assert!(self.coeffs.len() >= other.coeffs.len());
 
-        worker.scope(self.coeffs.len(), |scope, chunk| {
+        worker.scope(other.coeffs.len(), |scope, chunk| {
             for (a, b) in self.coeffs.chunks_mut(chunk).zip(other.coeffs.chunks(chunk)) {
                 scope.spawn(move |_| {
                     for (a, b) in a.iter_mut().zip(b.iter()) {
@@ -449,7 +448,7 @@ impl<F: PrimeField> Polynomial<F, Coefficients> {
         });
     }
 
-    pub fn evaluate_at(&mut self, worker: &Worker, g: F) -> F {
+    pub fn evaluate_at(&self, worker: &Worker, g: F) -> F {
         let num_threads = worker.cpus;
         let mut subvalues = vec![F::zero(); num_threads as usize];
 
@@ -609,8 +608,9 @@ impl<F: PrimeField> Polynomial<F, Values> {
         });
     }
 
-    pub fn batch_inversion(&mut self, worker: &Worker) {
-        let num_threads = worker.cpus;
+    pub fn batch_inversion(&mut self, worker: &Worker) -> Result<(), SynthesisError> {
+        let num_threads = worker.get_num_spawned_threads(self.coeffs.len());
+
         let mut grand_products = vec![F::one(); self.coeffs.len()];
         let mut subproducts = vec![F::one(); num_threads as usize];
 
@@ -630,13 +630,14 @@ impl<F: PrimeField> Polynomial<F, Values> {
         // now coeffs are [a, b, c, d, ..., z]
         // grand_products are [a, ab, abc, d, de, def, ...., xyz]
         // subproducts are [abc, def, xyz]
+        // not guaranteed to have equal length
 
         let mut full_grand_product = F::one();
         for sub in subproducts.iter() {
             full_grand_product.mul_assign(sub);
         }
 
-        let product_inverse = full_grand_product.inverse().expect("is non-zero");
+        let product_inverse = full_grand_product.inverse().ok_or(SynthesisError::Error)?;
 
         // now let's get [abc^-1, def^-1, ..., xyz^-1];
         let mut subinverses = vec![F::one(); num_threads];
@@ -670,5 +671,37 @@ impl<F: PrimeField> Polynomial<F, Values> {
                 });
             }
         });
+
+        Ok(())
+    }
+}
+
+
+#[test]
+fn test_batch_inversion() {
+    use crate::Fr;
+    use crate::fft::multicore::*;
+    use crate::ff::Field;
+
+    for size in 1..256 {
+        if !(size as usize).is_power_of_two() {
+            continue;
+        }
+        println!("Size = {}", size);
+        let mut inputs = vec![];
+        for i in 1..=size {
+            let f = Fr::from_str(&i.to_string()).unwrap();
+            inputs.push(f);
+        }
+
+        let worker = Worker::new();
+
+        let mut p = Polynomial::from_values(inputs.clone()).unwrap();
+        p.batch_inversion(&worker).unwrap();
+
+        for (k, (a, b)) in inputs.iter().zip(p.as_ref().iter()).enumerate() {
+            let inv = a.inverse().unwrap();
+            assert!(*b == inv, "invalid at {}", k);
+        }
     }
 }

@@ -59,15 +59,38 @@ impl Worker {
     ) -> R
         where F: FnOnce(&Scope<'a>, usize) -> R
     {
+        let chunk_size = self.get_chunk_size(elements);
+
+        crossbeam::scope(|scope| {
+            f(scope, chunk_size)
+        }).expect("must run")
+    }
+
+    pub fn get_chunk_size(
+        &self,
+        elements: usize
+    ) -> usize {
         let chunk_size = if elements < self.cpus {
             1
         } else {
             elements / self.cpus
         };
 
-        crossbeam::scope(|scope| {
-            f(scope, chunk_size)
-        }).expect("must run")
+        chunk_size
+    }
+
+    pub fn get_num_spawned_threads(
+        &self,
+        elements: usize
+    ) -> usize {
+        let chunk_size = self.get_chunk_size(elements);
+
+        let mut n = elements / chunk_size;
+        if elements % chunk_size != 0 {
+            n += 1;
+        }
+
+        n
     }
 }
 

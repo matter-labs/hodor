@@ -146,7 +146,7 @@ impl<F: PrimeField> From<ARP<F>> for ALI<F> {
         let column_domain = Domain::<F>::new_for_size(num_steps_sup as u64).expect("should be able to create");
         let full_trace_domain = Domain::<F>::new_for_size((num_steps_sup * num_registers_sup) as u64).expect("should be able to create");
 
-        assert_eq!(f_poly.as_ref().len(), num_registers_sup * num_steps_sup);
+        assert_eq!(f_poly.size(), num_registers_sup * num_steps_sup);
 
         ALI::<F> {
             f_poly: f,
@@ -344,7 +344,7 @@ impl<F: PrimeField> ALI<F> {
             let mut inverse_divisors = Polynomial::<F, Values>::new_for_size(term_evaluation_domain.size as usize)?;
 
             // prepare for batch inversion
-            worker.scope(inverse_divisors.as_ref().len(), |scope, chunk| {
+            worker.scope(inverse_divisors.size(), |scope, chunk| {
                 for (i, inv_divis) in inverse_divisors.as_mut().chunks_mut(chunk).enumerate() {
                     scope.spawn(move |_| {
                         let mut x = evaluation_domain_generator.pow([(i*chunk) as u64]);
@@ -359,11 +359,11 @@ impl<F: PrimeField> ALI<F> {
 
             // now polynomial is filled with X^T - 1, and need to be inversed
 
-            inverse_divisors.batch_inversion(&worker);
+            inverse_divisors.batch_inversion(&worker)?;
 
             // now do the evaluation
 
-            worker.scope(inverse_divisors.as_ref().len(), |scope, chunk| {
+            worker.scope(inverse_divisors.size(), |scope, chunk| {
                 for (i, inv_divis) in inverse_divisors.as_mut().chunks_mut(chunk).enumerate() {
                     let roots_iter_outer = roots_iter.clone();
                     scope.spawn(move |_| {
@@ -415,7 +415,7 @@ impl<F: PrimeField> ALI<F> {
 
         let mut current_coeff = F::one();
 
-        let subterm_domain = Domain::new_for_size(subterm_coefficients.as_ref().len() as u64)?;
+        let subterm_domain = Domain::new_for_size(subterm_coefficients.size() as u64)?;
 
         let mut evaluated_terms_map: HashMap::<WitnessEvaluationData<F>, Polynomial<F, Values>> = HashMap::new();
 
@@ -528,7 +528,7 @@ impl<F: PrimeField> ALI<F> {
                 subterm_coefficients.size() as u64
             )?;
 
-            inverse_q_poly_coset_values.batch_inversion(&worker);
+            inverse_q_poly_coset_values.batch_inversion(&worker)?;
             inverse_q_poly_coset_values.scale(&worker, current_coeff);
 
             // now those are in a form alpha * Q^-1

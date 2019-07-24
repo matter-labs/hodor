@@ -1,7 +1,7 @@
 use ff::PrimeField;
 use super::*;
 
-pub(crate) struct TrivialCombiner;
+pub struct TrivialCombiner;
 
 impl<F: PrimeField> CosetCombiner<F> for TrivialCombiner {
     type Index = ();
