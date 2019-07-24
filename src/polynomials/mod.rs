@@ -2,7 +2,7 @@ use ff::PrimeField;
 use crate::domains::*;
 use crate::SynthesisError;
 use crate::fft::multicore::*;
-use crate::fft::fft::*;
+use crate::fft::*;
 
 pub trait PolynomialForm: Sized + Copy + Clone {}
 
@@ -353,7 +353,7 @@ impl<F: PrimeField> Polynomial<F, Coefficients> {
 
         let mut lde = self.coeffs;
         lde.resize(new_size as usize, F::zero());
-        crate::fft::best_lde(&mut lde, worker, &domain.generator, domain.power_of_two as u32, factor);
+        best_lde(&mut lde, worker, &domain.generator, domain.power_of_two as u32, factor);
 
         Polynomial::from_values(lde)
     }
@@ -370,7 +370,7 @@ impl<F: PrimeField> Polynomial<F, Coefficients> {
 
         let mut lde = self.coeffs;
         lde.resize(new_size as usize, F::zero());
-        crate::fft::best_lde(&mut lde, worker, &domain.generator, domain.power_of_two as u32, factor);
+        best_lde(&mut lde, worker, &domain.generator, domain.power_of_two as u32, factor);
 
         Polynomial::from_values(lde)
     }

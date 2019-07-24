@@ -1,5 +1,6 @@
 pub(crate) mod multicore;
 pub(crate) mod fft;
+pub(crate) mod lde;
 pub mod radix2_domain;
 
 pub(crate) mod recursive_fft;
@@ -8,10 +9,11 @@ pub(crate) mod recursive_lde;
 use cfg_if;
 
 #[cfg(feature = "nightly")]
-pub(crate) mod prefetch_lde;
-
-#[cfg(not(feature = "nightly"))]
-pub(crate) mod lde;
+mod prefetch_lde;
+#[cfg(feature = "nightly")]
+mod prefetch_fft;
+#[cfg(feature = "nightly")]
+mod prefetch;
 
 use ff::PrimeField;
 use self::multicore::Worker;
@@ -22,10 +24,19 @@ cfg_if! {
         pub(crate) fn best_lde<F: PrimeField>(a: &mut [F], worker: &Worker, omega: &F, log_n: u32, lde_factor: usize) {
             self::prefetch_lde::best_lde(a, worker, omega, log_n, lde_factor)
         }
+
+        #[inline(always)]
+        pub(crate) fn best_fft<F: PrimeField>(a: &mut [F], worker: &Worker, omega: &F, log_n: u32) {
+            self::prefetch_fft::best_fft(a, worker, omega, log_n)
+        }
     } else {
         #[inline(always)]
         pub(crate) fn best_lde<F: PrimeField>(a: &mut [F], worker: &Worker, omega: &F, log_n: u32, lde_factor: usize) {
             self::lde::best_lde(a, worker, omega, log_n, lde_factor)
+        }
+        #[inline(always)]
+        pub(crate) fn best_fft<F: PrimeField>(a: &mut [F], worker: &Worker, omega: &F, log_n: u32) {
+            self::fft::best_fft(a, worker, omega, log_n)
         }
     }  
 }

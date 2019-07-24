@@ -1,9 +1,6 @@
-extern crate prefetch;
-
-use self::prefetch::prefetch::*;
-
 use ff::PrimeField;
 use super::multicore::*;
+use super::prefetch::*;
 
 pub(crate) fn best_lde<F: PrimeField>(a: &mut [F], worker: &Worker, omega: &F, log_n: u32, lde_factor: usize)
 {
@@ -66,13 +63,16 @@ pub(crate) fn serial_lde<F: PrimeField>(a: &mut [F], omega: &F, log_n: u32, lde_
         if is_dense_round(lde_factor, step) {    
             // standard fft
             for k in (0..n).step_by(step_by) {
+                {
+                    prefetch_index::<F>(a, (k + m) as usize);
+                    prefetch_index::<F>(a, k as usize);
+                }
                 let mut w = F::one();
                 for j in 0..(m-1) {
-                    let p: *const F = &a[(k+j+1+m) as usize];
-                    prefetch::<Write, High, Data, _>(p);
-                    let p: *const F = &a[(k+j+1) as usize];
-                    prefetch::<Write, High, Data, _>(p);
-
+                    {
+                        prefetch_index::<F>(a, (k+j+1+m) as usize);
+                        prefetch_index::<F>(a, (k+j+1) as usize);
+                    }
                     let mut t = a[(k+j+m) as usize];
                     t.mul_assign(&w);
                     let mut tmp = a[(k+j) as usize];
@@ -94,20 +94,22 @@ pub(crate) fn serial_lde<F: PrimeField>(a: &mut [F], omega: &F, log_n: u32, lde_
         } else {
             // have some pain trying to save on memory reads and multiplications
             for k in (0..n).step_by(step_by) {
+                {
+                    let odd_idx = (k + m) as usize;
+                    let even_idx = k as usize;
+                    if is_non_zero(even_idx, lde_factor, step) || is_non_zero(odd_idx, lde_factor, step) {
+                        prefetch_index::<F>(a, odd_idx);
+                        prefetch_index::<F>(a, even_idx);
+                    }
+                }
                 let mut w = F::one();
                 for j in 0..(m-1) {
                     let odd_idx = (k+j+m) as usize;
                     let even_idx = (k+j) as usize;
-
                     {
-                        if is_non_zero(odd_idx+1, lde_factor, step) {
-                            let p: *const F = &a[odd_idx + 1];
-                            prefetch::<Write, High, Data, _>(p);
-                        }
-
-                        if is_non_zero(even_idx+1, lde_factor, step) {
-                            let p: *const F = &a[even_idx + 1];
-                            prefetch::<Write, High, Data, _>(p);
+                        if is_non_zero(even_idx+1, lde_factor, step) || is_non_zero(odd_idx+1, lde_factor, step) {
+                            prefetch_index::<F>(a, odd_idx + 1);
+                            prefetch_index::<F>(a, even_idx + 1);
                         }
                     }
 
@@ -239,7 +241,7 @@ pub(crate) fn parallel_lde<F: PrimeField>(
 
                 let new_lde_factor = lde_factor >> log_cpus;
                 if new_lde_factor <= 1 {
-                    super::fft::serial_fft(tmp, &new_omega, log_new_n);
+                    super::prefetch_fft::serial_fft(tmp, &new_omega, log_new_n);
                 } else {
                     serial_lde(tmp, &new_omega, log_new_n, new_lde_factor);
                 }
@@ -293,7 +295,7 @@ fn test_small_lde() {
     let mut lde = coeffs;
 
     let now = Instant::now();
-    crate::fft::fft::best_fft(&mut reference[..], &worker, &omega, log_n);
+    crate::fft::best_fft(&mut reference[..], &worker, &omega, log_n);
     println!("naive LDE taken {}ms", now.elapsed().as_millis());
 
     // let now = Instant::now();
@@ -312,7 +314,7 @@ fn test_small_lde() {
 }
 
 #[test]
-fn test_small_serial_lde() {
+fn test_small_prefetch_serial_lde() {
     use rand::{XorShiftRng, SeedableRng, Rand};
     const LOG_N: usize = 2;
     const BASE: usize = 1 << LOG_N;
@@ -349,7 +351,7 @@ fn test_small_serial_lde() {
 }
 
 #[test]
-fn test_large_serial_lde() {
+fn test_large_prefetch_serial_lde() {
     use rand::{XorShiftRng, SeedableRng, Rand};
     const LOG_N: usize = 20;
     const BASE: usize = 1 << LOG_N;
@@ -386,7 +388,7 @@ fn test_large_serial_lde() {
 }
 
 #[test]
-fn test_large_lde() {
+fn test_large_prefetch_lde() {
     use rand::{XorShiftRng, SeedableRng, Rand};
     const LOG_N: usize = 22;
     const BASE: usize = 1 << LOG_N;

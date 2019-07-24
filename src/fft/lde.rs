@@ -222,7 +222,7 @@ fn test_small_lde() {
     let mut lde = coeffs;
 
     let now = Instant::now();
-    crate::fft::fft::best_fft(&mut reference[..], &worker, &omega, log_n);
+    crate::fft::best_fft(&mut reference[..], &worker, &omega, log_n);
     println!("naive LDE taken {}ms", now.elapsed().as_millis());
 
     // let now = Instant::now();
