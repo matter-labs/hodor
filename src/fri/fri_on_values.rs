@@ -4,21 +4,10 @@ use crate::polynomials::*;
 use crate::fft::multicore::*;
 use crate::SynthesisError;
 
-pub struct FRIIOP<F: PrimeField, I: IOP<F>> {
-    _marker_f: std::marker::PhantomData<F>,
-    _marker_i: std::marker::PhantomData<I>
-}
-
-pub struct FRIProof<F: PrimeField, I: IOP<F>> {
-    pub l0_commitment: I,
-    pub intermediate_commitments: Vec<I>,
-    pub intermediate_values: Vec< Polynomial<F, Values> >,
-    pub intermediate_challenges: Vec<F>,
-    pub final_coefficients: Vec<F>,
-}
+use super::{FRIIOP, FRIProof};
 
 impl<F: PrimeField, I: IOP<F>> FRIIOP<F, I> {
-    pub fn proof_from_lde(
+    pub fn proof_from_lde_by_values(
         lde_values: &Polynomial<F, Values>, 
         lde_factor: usize,
         output_coeffs_at_degree_plus_one: usize,
@@ -31,35 +20,19 @@ impl<F: PrimeField, I: IOP<F>> FRIIOP<F, I> {
         two.double();
         let two_inv = two.inverse().expect("should exist");
 
-        let mut omegas = vec![F::zero(); precomputation_size];
-        let omega = lde_values.omega;
-
-        let mut two_omegas_inv = vec![F::zero(); precomputation_size];
+        let mut omegas_inv = vec![F::zero(); precomputation_size];
         let omega_inv = lde_values.omegainv;
 
         // for interpolations we will need factors 2*w^k in denominator,
         // so we just make powers
 
-        worker.scope(two_omegas_inv.len(), |scope, chunk| {
-            for (i, v) in two_omegas_inv.chunks_mut(chunk).enumerate() {
+        worker.scope(omegas_inv.len(), |scope, chunk| {
+            for (i, v) in omegas_inv.chunks_mut(chunk).enumerate() {
                 scope.spawn(move |_| {
                     let mut u = omega_inv.pow(&[(i * chunk) as u64]);
-                    u.mul_assign(&two_inv);
                     for v in v.iter_mut() {
                         *v = u;
                         u.mul_assign(&omega_inv);
-                    }
-                });
-            }
-        });
-
-        worker.scope(omegas.len(), |scope, chunk| {
-            for (i, v) in omegas.chunks_mut(chunk).enumerate() {
-                scope.spawn(move |_| {
-                    let mut u = omega.pow(&[(i * chunk) as u64]);
-                    for v in v.iter_mut() {
-                        *v = u;
-                        u.mul_assign(&omega);
                     }
                 });
             }
@@ -69,9 +42,7 @@ impl<F: PrimeField, I: IOP<F>> FRIIOP<F, I> {
         assert!(lde_factor.is_power_of_two());
 
         let initial_degree_plus_one = initial_domain_size / lde_factor;
-        println!("Original poly degree = {}, will output at degree = {}", initial_degree_plus_one, output_coeffs_at_degree_plus_one);
         let num_steps = log2_floor(initial_degree_plus_one / output_coeffs_at_degree_plus_one) as usize;
-        println!("Will make {} FRI steps", num_steps);
 
         let mut intermediate_commitments = vec![];
         let mut intermediate_values = vec![];
@@ -82,52 +53,45 @@ impl<F: PrimeField, I: IOP<F>> FRIIOP<F, I> {
         let mut stride = 1;
 
         let mut values_slice = lde_values.as_ref();
-        let omegas_ref: &[F] = omegas.as_ref();
-        let two_omegas_inv_ref: &[F] = two_omegas_inv.as_ref();
+
+        let omegas_inv_ref: &[F] = omegas_inv.as_ref();
         
         for _ in 0..num_steps {
             let mut next_values = vec![F::zero(); next_domain_size];
+
+            assert!(values_slice.len() == next_values.len() * 2);
 
             worker.scope(next_values.len(), |scope, chunk| {
             for (i, v) in next_values.chunks_mut(chunk)
                             .enumerate() {
                 scope.spawn(move |_| {
                     let initial_k = i*chunk;
-                    // use naive linear interpolation like
-                    // (f(omega^k) - f(omega^(k + N/2)))/(omega^k - omega^(k + N/2))*(Y - omega^(k + N/2)) + f(omega^(k + N/2)) =
-                    // (f(omega^k) - f(omega^(k + N/2)))/(2*omega^k)*(Y + omega^(k)) + f(omega^(k + N/2))
-                    // and immediately evaluate
                     for (j, v) in v.iter_mut().enumerate() {
-                        // f(omega^k)
-                        let mut alpha = values_slice[initial_k + j];
-                        // f(omega^k) - f(omega^(k + N/2))
-                        alpha.sub_assign(&values_slice[initial_k + j + next_domain_size]);
-                        // (f(omega^k) - f(omega^(k + N/2)))/(2*omega^k)
-                        alpha.mul_assign(&two_omegas_inv_ref[initial_k + j*stride]);
+                        let idx = initial_k + j;
+                        let omega_idx = idx * stride;
+                        let f_at_omega = values_slice[idx];
+                        let f_at_minus_omega = values_slice[idx + next_domain_size];
 
-                        // Y
-                        let mut y = next_domain_challenge;
-                        // (Y + omega^(k))
-                        y.add_assign(&omegas_ref[initial_k + j*stride]);
+                        let mut v_even_coeffs = f_at_omega;
+                        v_even_coeffs.add_assign(&f_at_minus_omega);
 
-                        // alpha * (Y + omega^(k))
-                        alpha.mul_assign(&y);
-                        // + f(omega^(k + N/2))
-                        alpha.add_assign(&values_slice[initial_k + j + next_domain_size]);
-                        *v = alpha;
+                        let mut v_odd_coeffs = f_at_omega;
+                        v_odd_coeffs.sub_assign(&f_at_minus_omega);
+                        v_odd_coeffs.mul_assign(&omegas_inv_ref[omega_idx]);
 
-                        // // check the interpolation
-                        // {
-                        //     let c = values_slice[initial_k + j + next_domain_size];
-                        //     let mut x = omegas_ref[initial_k + j*stride];
-                        //     x.double();
-                        //     let mut t = alpha;
-                        //     t.mul_assign(&x);
-                        //     t.add_assign(&c);
-                        //     debug_assert!(t == values_slice[initial_k + j]);
+                        // those can be treated as (doubled) evaluations of polynomials that
+                        // are themselves made only from even or odd coefficients of original poly 
+                        // (with reduction of degree by 2) on a domain of the size twice smaller
+                        // with an extra factor of "omega" in odd coefficients
 
+                        // to do assemble FRI step we just need to add them with a random challenge
 
-                        // }
+                        let mut tmp = v_odd_coeffs;
+                        tmp.mul_assign(&next_domain_challenge);
+                        tmp.add_assign(&v_even_coeffs);
+                        tmp.mul_assign(&two_inv);
+
+                        *v = tmp;
                     }
                 });
             }
@@ -137,16 +101,14 @@ impl<F: PrimeField, I: IOP<F>> FRIIOP<F, I> {
         next_domain_challenge = intermediate_iop.get_challenge_scalar_from_root();
         intermediate_challenges.push(next_domain_challenge);
         next_domain_size /= 2;
-        stride += 1;
+        stride *= 2;
 
         intermediate_commitments.push(intermediate_iop);
         let next_values_as_poly = Polynomial::from_values(next_values)?;
-        let next_values_as_coeffs = next_values_as_poly.clone().ifft(&worker);
-        println!("Next poly = {:?}", next_values_as_coeffs.as_ref());
         intermediate_values.push(next_values_as_poly);
 
         values_slice = intermediate_values.last().expect("is something").as_ref();
-        }
+    }
 
     intermediate_challenges.pop().expect("will work");
 
@@ -157,26 +119,29 @@ impl<F: PrimeField, I: IOP<F>> FRIIOP<F, I> {
     let final_poly_values = Polynomial::from_values(values_slice.to_vec())?;
     let final_poly_coeffs = final_poly_values.ifft(&worker);
 
-    println!("Final coeffs = {:?}", final_poly_coeffs.as_ref());
+    let mut final_poly_coeffs = final_poly_coeffs.into_coeffs();
+    final_poly_coeffs.truncate(output_coeffs_at_degree_plus_one);
 
-    let mut degree_plus_one = final_poly_coeffs.size();
+    // println!("Final coeffs = {:?}", final_poly_coeffs.as_ref());
 
-    for v in final_poly_coeffs.as_ref().iter().rev() {
-        if v.is_zero() {
-            degree_plus_one -= 1;
-        } else {
-            break;
-        }
-    }
+    // let mut degree_plus_one = final_poly_coeffs.size();
 
-    println!("Degree = {}", degree_plus_one);
+    // for v in final_poly_coeffs.as_ref().iter().rev() {
+    //     if v.is_zero() {
+    //         degree_plus_one -= 1;
+    //     } else {
+    //         break;
+    //     }
+    // }
+
+    // println!("Degree = {}", degree_plus_one);
 
     Ok(FRIProof {
         l0_commitment,
         intermediate_commitments,
         intermediate_values,
         intermediate_challenges,
-        final_coefficients: final_poly_coeffs.into_coeffs()
+        final_coefficients: final_poly_coeffs
     })
 
     }
@@ -196,7 +161,7 @@ fn log2_floor(num: usize) -> u32 {
 
 
 #[test]
-fn test_fib_conversion_into_fri() {
+fn test_fib_conversion_into_by_values_fri() {
     use crate::Fr;
     use crate::air::Fibonacci;
     use crate::air::TestTraceSystem;
@@ -241,8 +206,8 @@ fn test_fib_conversion_into_fri() {
     let h1_lde = deep_ali.h_1_poly.take().expect("is something");
     let h2_lde = deep_ali.h_2_poly.take().expect("is something");
 
-    let h1_fri_proof = FRIIOP::<Fr, TrivialBlake2sIOP<Fr>>::proof_from_lde(&h1_lde, lde_factor, 1, &worker);
-    let h2_fri_proof = FRIIOP::<Fr, TrivialBlake2sIOP<Fr>>::proof_from_lde(&h2_lde, lde_factor, 1, &worker);
+    let h1_fri_proof = FRIIOP::<Fr, TrivialBlake2sIOP<Fr>>::proof_from_lde_by_values(&h1_lde, lde_factor, 1, &worker);
+    let h2_fri_proof = FRIIOP::<Fr, TrivialBlake2sIOP<Fr>>::proof_from_lde_by_values(&h2_lde, lde_factor, 1, &worker);
 
     // println!("H1 = {:?}", deep_ali.h_1_poly);
     // println!("H2 = {:?}", deep_ali.h_2_poly);

@@ -275,6 +275,8 @@ impl<F: PrimeField> IntoARP<F> for CubicVDF<F> {
 #[test]
 fn try_prove_cubic_vdf() {
     use std::time::Instant;
+    use crate::iop::blake2s_trivial_iop::TrivialBlake2sIOP;
+    use crate::fri::*;
 
     let vdf_instance = CubicVDF::<Fr> {
         start_c0: Fr::one(),
@@ -341,4 +343,13 @@ fn try_prove_cubic_vdf() {
 
     println!("H1 and H2 oracles done after {} ms", start.elapsed().as_millis());
     println!("Total proving time w/o FRI is {} ms", total_start.elapsed().as_millis());
+
+    let h1_lde = deep_ali.h_1_poly.take().expect("is something");
+    let h2_lde = deep_ali.h_2_poly.take().expect("is something");
+
+    let h1_fri_proof = FRIIOP::<Fr, TrivialBlake2sIOP<Fr>>::proof_from_lde_by_values(&h1_lde, lde_factor, 1, &worker);
+    let h2_fri_proof = FRIIOP::<Fr, TrivialBlake2sIOP<Fr>>::proof_from_lde_by_values(&h2_lde, lde_factor, 1, &worker);
+
+    println!("Total proving time with FRI is {} ms", total_start.elapsed().as_millis());
+
 }

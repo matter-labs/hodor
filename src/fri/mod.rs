@@ -4,6 +4,8 @@ use crate::polynomials::*;
 use crate::fft::multicore::*;
 use crate::SynthesisError;
 
+pub mod fri_on_values;
+
 pub struct FRIIOP<F: PrimeField, I: IOP<F>> {
     _marker_f: std::marker::PhantomData<F>,
     _marker_i: std::marker::PhantomData<I>
@@ -31,11 +33,10 @@ impl<F: PrimeField, I: IOP<F>> FRIIOP<F, I> {
         assert!(lde_factor.is_power_of_two());
 
         let initial_degree_plus_one = initial_domain_size / lde_factor;
-        println!("Original poly degree = {}, will output at degree = {}", initial_degree_plus_one, output_coeffs_at_degree_plus_one);
         let num_steps = log2_floor(initial_degree_plus_one / output_coeffs_at_degree_plus_one) as usize;
-        println!("Will make {} FRI steps", num_steps);
 
-        let mut initial_polynomial_coeffs = lde_values.ifft(&worker).into_coeffs();
+        let initial_polynomial = lde_values.ifft(&worker);
+        let mut initial_polynomial_coeffs = initial_polynomial.into_coeffs();
         initial_polynomial_coeffs.truncate(initial_degree_plus_one);
         
         let mut intermediate_commitments = vec![];
@@ -50,15 +51,15 @@ impl<F: PrimeField, I: IOP<F>> FRIIOP<F, I> {
         for _ in 0..num_steps {
             let mut next_coefficients = vec![F::zero(); next_domain_size];
             let coeffs_slice: &[F] = coeffs.as_ref();
+            assert!(next_coefficients.len()*2 == coeffs_slice.len());
 
             worker.scope(next_coefficients.len(), |scope, chunk| {
-            for (i, v) in next_coefficients.chunks_mut(chunk)
-                            .enumerate() {
+            for (v, old) in next_coefficients.chunks_mut(chunk)
+                            .zip(coeffs_slice.chunks(chunk*2)) {
                 scope.spawn(move |_| {
-                    let initial_k = i*chunk;
-                    for (j, v) in v.iter_mut().enumerate() {
-                        let x = coeffs_slice[initial_k + j];
-                        let mut tmp = coeffs_slice[initial_k + j + 1];
+                    for (v, old) in v.iter_mut().zip(old.chunks(2)) {
+                        let x = old[0];
+                        let mut tmp = old[1];
                         tmp.mul_assign(&next_domain_challenge);
                         tmp.add_assign(&x);
 
@@ -89,19 +90,21 @@ impl<F: PrimeField, I: IOP<F>> FRIIOP<F, I> {
 
     let final_poly_coeffs = coeffs;
 
-    println!("Final coeffs = {:?}", final_poly_coeffs);
+    assert!(final_poly_coeffs.len() == output_coeffs_at_degree_plus_one);
 
-    let mut degree_plus_one = final_poly_coeffs.len();
+    // println!("Final coeffs = {:?}", final_poly_coeffs);
 
-    for v in final_poly_coeffs.iter().rev() {
-        if v.is_zero() {
-            degree_plus_one -= 1;
-        } else {
-            break;
-        }
-    }
+    // let mut degree_plus_one = final_poly_coeffs.len();
 
-    println!("Degree = {}", degree_plus_one);
+    // for v in final_poly_coeffs.iter().rev() {
+    //     if v.is_zero() {
+    //         degree_plus_one -= 1;
+    //     } else {
+    //         break;
+    //     }
+    // }
+
+    // println!("Degree = {}", degree_plus_one);
 
     Ok(FRIProof {
         l0_commitment,

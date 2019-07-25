@@ -40,7 +40,6 @@ pub(crate) fn serial_fft<F: PrimeField>(a: &mut [F], omega: &F, log_n: u32)
         let w_m = omega.pow(&[(n / (2*m)) as u64]);
 
         let step_by = 2*m as usize;
-        let mut k = 0;
         for k in (0..n).step_by(step_by) {
             {
                 prefetch_index::<F>(a, (k + m) as usize);
