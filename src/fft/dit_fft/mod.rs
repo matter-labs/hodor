@@ -21,7 +21,7 @@ pub(crate) fn serial_DIT_fft<F: PrimeField>(a: &mut [F], omega: &F, log_n: u32, 
     let mut m = 1;
     for _ in 0..log_n
     {
-        let w_m = omega.pow(&[(m-1) as u64]);
+        let w_m = omega.pow(&[(m) as u64]);
         let mut k = 0;
         let mut block = 0;
         let mut block_len = n / m;
@@ -29,13 +29,13 @@ pub(crate) fn serial_DIT_fft<F: PrimeField>(a: &mut [F], omega: &F, log_n: u32, 
         for block in 0..m
         {
             let mut w = F::one();
-            for k in (block * block_len)..(block * block_len + (non_zero_entries_count as u64))
+            for k in (block * block_len)..(block * block_len + std::cmp::min(block_len/2, (non_zero_entries_count as u64)))
             {
                 let mut t = a[(k + block_len / 2) as usize];
-                t.mul_assign(&w);
                 let mut tmp = a[(k) as usize];
                 tmp.sub_assign(&t);
                 a[(k+ block_len / 2) as usize] = tmp;
+                a[(k+ block_len / 2) as usize].mul_assign(&w);
                 a[(k) as usize].add_assign(&t);
                 w.mul_assign(&w_m);
             }

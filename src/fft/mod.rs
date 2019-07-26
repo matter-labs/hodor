@@ -38,7 +38,7 @@ pub(crate) mod radix4_fft;
 fn test_FFT()
 {
     use rand::{XorShiftRng, SeedableRng, Rand};
-    const LOG_N: u32 = 4;
+    const LOG_N: u32 = 10;
     const N: usize = 1 << LOG_N;
     let rng = &mut XorShiftRng::from_seed([0x3dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
     use ff::Field;
@@ -58,19 +58,29 @@ fn test_FFT()
     let mut end = Instant::now();
     let radix_2_time = end - start;
 
-    start = Instant::now();
-    dit_fft::serial_DIT_fft::<Fr>(&mut b, &omega, LOG_N, N);
-    end = Instant::now();
+    let mut start = Instant::now();
+    radix4_fft::serial_fft_radix_4::<Fr>(&mut b, &omega, LOG_N);
+    let mut end = Instant::now();
     let radix_4_time = end - start;
 
-    println!("Radix2 time: {}", radix_2_time.as_secs());
-    println!("Radix4 time: {}", radix_4_time.as_secs());
+    start = Instant::now();
+    dit_fft::serial_DIT_fft::<Fr>(&mut c, &omega, LOG_N, N);
+    end = Instant::now();
+    let dit_fft_time = end - start;
+
+    println!("Radix2 time: {}", radix_2_time.subsec_millis());
+    println!("Radix4 time: {}", radix_4_time.subsec_millis());
+    println!("dit time: {}", dit_fft_time.subsec_millis());
+    
 
     // println!("{:?}", a);
     // println!("{:?}", b);
 
-    let matching = a.iter().zip(b.iter()).filter(|(a, b)| *a == *b).count();
-    assert_eq!(matching, N);
+    let matching_radix4 = a.iter().zip(b.iter()).filter(|(a, b)| *a == *b).count();
+    let matching_dit = a.iter().zip(b.iter()).filter(|(a, c)| *a == *c).count();
+    assert_eq!(matching_radix4, N);
+    assert_eq!(matching_dit, N);
+    
 }
 
 // #[cfg(feature = "nightly")]
