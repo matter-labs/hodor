@@ -1,11 +1,17 @@
 use ff::PrimeField;
 use super::multicore::*;
+use crate::utils::*;
 
-pub(crate) fn best_fft<F: PrimeField>(a: &mut [F], worker: &Worker, omega: &F, log_n: u32)
+pub(crate) fn best_fft<F: PrimeField>(a: &mut [F], worker: &Worker, omega: &F, log_n: u32, use_cpus_hint: Option<usize>)
 {
-    let log_cpus = worker.log_num_cpus();
+    let log_cpus = if let Some(hint) = use_cpus_hint {
+        assert!(hint <= worker.cpus);
+        log2_floor(hint)
+    } else {
+        worker.log_num_cpus()
+    };
 
-    if log_n <= log_cpus {
+    if log_cpus == 0 || log_n <= log_cpus {
         serial_fft(a, omega, log_n);
     } else {
         parallel_fft(a, worker, omega, log_n, log_cpus);

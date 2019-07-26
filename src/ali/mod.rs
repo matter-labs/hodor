@@ -419,20 +419,40 @@ impl<F: PrimeField> ALI<F> {
 
         let mut evaluated_terms_map: HashMap::<WitnessEvaluationData<F>, Polynomial<F, Values>> = HashMap::new();
 
-        for constraint in self.constraints.iter() {
-            current_coeff.mul_assign(&alpha);
-            
-            let mut subterm_coefficients = subterm_coefficients.clone();
+        // one may optimize and save on muptiplications for the most expected case when constraints 
+        // all have the same density
 
-            let mut inverse_divisors = match self.inversed_divisors_in_cosets.get(&constraint.density) {
+        let mut constraints_batched_by_density: HashMap::< ConstraintDensity, Vec<Constraint<F>> > = HashMap::new();
+
+        for constraint in self.constraints.iter() {
+            if let Some(batch) = constraints_batched_by_density.get_mut(&constraint.density) {
+                batch.push(constraint.clone());
+            } else {
+                constraints_batched_by_density.insert(constraint.density, vec![constraint.clone()]);
+            }
+        }
+
+        for (density, constraints) in constraints_batched_by_density.into_iter() {
+            let mut per_density_coefficients = subterm_coefficients.clone();
+
+            // TODO: Refactor constraints definitions
+            let c0 = constraints[0].clone();
+            let start_at = match c0.density {
+                ConstraintDensity::Dense => {
+                    c0.start_at as u64
+                },
+                _ => {
+                    unimplemented!()
+                }
+            };
+            
+            let inverse_divisors = match self.inversed_divisors_in_cosets.get(&density) {
                 Some(div) => {
                     div.clone()
                 },
                 _ => {
-                    let (inverse_divisors, _divisor_degree) = match constraint.density {
+                    let (inverse_divisors, _divisor_degree) = match density {
                         ConstraintDensity::Dense => {
-                            let start_at = constraint.start_at as u64;
-
                             let result = inverse_divisor_for_dense_constraint_in_coset(
                                 &self.column_domain,
                                 &subterm_domain, 
@@ -447,49 +467,101 @@ impl<F: PrimeField> ALI<F> {
                             unimplemented!();
                         }
                     };
-                    self.inversed_divisors_in_cosets.insert(constraint.density, inverse_divisors.clone());
+                    self.inversed_divisors_in_cosets.insert(density, inverse_divisors.clone());
 
                     inverse_divisors
                 }
             };
 
-            // first we need to calculate denominator at the value
+            for constraint in constraints.into_iter() {
+                current_coeff.mul_assign(&alpha);
 
-            inverse_divisors.scale(&worker, current_coeff);
+                for term in constraint.terms.iter() {
+                    let evaluated_term = evaluate_constraint_term_into_coefficients(
+                        &term, 
+                        &self.mask_applied_polynomials,
+                        &mut evaluated_terms_map,
+                        None,
+                        &worker
+                    )?;
 
-            for term in constraint.terms.iter() {
-                let evaluated_term = evaluate_constraint_term_into_coefficients(
-                    &term, 
-                    &self.mask_applied_polynomials,
-                    &mut evaluated_terms_map,
-                    None,
-                    &worker
-                )?;
+                    per_density_coefficients.add_assign_scaled(&worker, &evaluated_term, &current_coeff);
+                }
 
-                subterm_coefficients.add_assign(&worker, &evaluated_term);
+                per_density_coefficients.as_mut()[0].add_assign(&constraint.constant_term);
             }
 
-            subterm_coefficients.as_mut()[0].add_assign(&constraint.constant_term);
-
+            
             // these values are correct and are evaluations of some polynomial at points (gen, gen * omega, gen * omega*2)
-            let mut subterm_values_in_coset = subterm_coefficients.coset_fft(&worker);
+            let mut per_density_in_coset = per_density_coefficients.coset_fft(&worker);
+            per_density_in_coset.mul_assign(&worker, &inverse_divisors);
 
-            subterm_values_in_coset.mul_assign(&worker, &inverse_divisors);
+            let per_density_coefficients = per_density_in_coset.icoset_fft(&worker);
 
-            let subterm_coefficients = subterm_values_in_coset.icoset_fft(&worker);
-
-            // let mut degree = subterm_coefficients.as_ref().len() - 1;
-            // for c in subterm_coefficients.as_ref().iter().rev() {
-            //     if c.is_zero() {
-            //         degree -= 1;
-            //     } else {
-            //         break;
-            //     }
-            // }
-            // println!("Final degree = {}", degree);
-
-            g_poly.add_assign(&worker, &subterm_coefficients);
+            g_poly.add_assign(&worker, &per_density_coefficients);
         }
+
+        // for constraint in self.constraints.iter() {
+        //     current_coeff.mul_assign(&alpha);
+            
+        //     let mut subterm_coefficients = subterm_coefficients.clone();
+
+        //     let mut inverse_divisors = match self.inversed_divisors_in_cosets.get(&constraint.density) {
+        //         Some(div) => {
+        //             div.clone()
+        //         },
+        //         _ => {
+        //             let (inverse_divisors, _divisor_degree) = match constraint.density {
+        //                 ConstraintDensity::Dense => {
+        //                     let start_at = constraint.start_at as u64;
+
+        //                     let result = inverse_divisor_for_dense_constraint_in_coset(
+        //                         &self.column_domain,
+        //                         &subterm_domain, 
+        //                         start_at,
+        //                         self.num_steps as u64,
+        //                         &worker
+        //                     )?;
+
+        //                     result
+        //                 },
+        //                 _ => {
+        //                     unimplemented!();
+        //                 }
+        //             };
+        //             self.inversed_divisors_in_cosets.insert(constraint.density, inverse_divisors.clone());
+
+        //             inverse_divisors
+        //         }
+        //     };
+
+        //     // first we need to calculate denominator at the value
+
+        //     inverse_divisors.scale(&worker, current_coeff);
+
+        //     for term in constraint.terms.iter() {
+        //         let evaluated_term = evaluate_constraint_term_into_coefficients(
+        //             &term, 
+        //             &self.mask_applied_polynomials,
+        //             &mut evaluated_terms_map,
+        //             None,
+        //             &worker
+        //         )?;
+
+        //         subterm_coefficients.add_assign(&worker, &evaluated_term);
+        //     }
+
+        //     subterm_coefficients.as_mut()[0].add_assign(&constraint.constant_term);
+
+        //     // these values are correct and are evaluations of some polynomial at points (gen, gen * omega, gen * omega*2)
+        //     let mut subterm_values_in_coset = subterm_coefficients.coset_fft(&worker);
+
+        //     subterm_values_in_coset.mul_assign(&worker, &inverse_divisors);
+
+        //     let subterm_coefficients = subterm_values_in_coset.icoset_fft(&worker);
+
+        //     g_poly.add_assign(&worker, &subterm_coefficients);
+        // }
 
         for b_constraint in self.boundary_constraints.iter() {
             current_coeff.mul_assign(&alpha);

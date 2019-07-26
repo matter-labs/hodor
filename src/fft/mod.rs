@@ -1,10 +1,9 @@
 pub(crate) mod multicore;
 pub(crate) mod fft;
 pub(crate) mod lde;
-pub mod radix2_domain;
 
-pub(crate) mod recursive_fft;
-pub(crate) mod recursive_lde;
+// pub(crate) mod recursive_fft;
+// pub(crate) mod recursive_lde;
 
 use cfg_if;
 
@@ -26,8 +25,8 @@ cfg_if! {
         }
 
         #[inline(always)]
-        pub(crate) fn best_fft<F: PrimeField>(a: &mut [F], worker: &Worker, omega: &F, log_n: u32) {
-            self::prefetch_fft::best_fft(a, worker, omega, log_n)
+        pub(crate) fn best_fft<F: PrimeField>(a: &mut [F], worker: &Worker, omega: &F, log_n: u32, use_cpus_hint: Option<usize>) {
+            self::prefetch_fft::best_fft(a, worker, omega, log_n, use_cpus_hint)
         }
 
         #[inline(always)]
@@ -40,8 +39,8 @@ cfg_if! {
             self::lde::best_lde(a, worker, omega, log_n, lde_factor)
         }
         #[inline(always)]
-        pub(crate) fn best_fft<F: PrimeField>(a: &mut [F], worker: &Worker, omega: &F, log_n: u32) {
-            self::fft::best_fft(a, worker, omega, log_n)
+        pub(crate) fn best_fft<F: PrimeField>(a: &mut [F], worker: &Worker, omega: &F, log_n: u32, use_cpus_hint: Option<usize>) {
+            self::fft::best_fft(a, worker, omega, log_n, use_cpus_hint)
         }
         #[inline(always)]
         pub(crate) fn serial_fft<F: PrimeField>(a: &mut [F], omega: &F, log_n: u32) {

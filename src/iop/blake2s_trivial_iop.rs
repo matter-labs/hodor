@@ -1,5 +1,5 @@
 use ff::{PrimeField, PrimeFieldRepr};
-use blake2s_simd::{blake2s, Params, State};
+use blake2s_simd::{Params, State};
 use crate::fft::multicore::Worker;
 use super::*;
 use super::trivial_coset_combiner::*;

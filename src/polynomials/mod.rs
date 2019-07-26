@@ -423,6 +423,14 @@ impl<F: PrimeField> Polynomial<F, Coefficients> {
             return Ok(self.fft(&worker));
         }
 
+        let num_cpus = worker.cpus;
+        let num_cpus_hint = if num_cpus <= factor {
+            Some(1)
+        } else {
+            let threads_per_coset = factor / num_cpus + 1;
+            Some(threads_per_coset)
+        };
+
         // asuume num_cpu > factor. TODO: make clever version for another case
 
         assert!(factor.is_power_of_two());
@@ -443,7 +451,7 @@ impl<F: PrimeField> Polynomial<F, Coefficients> {
                     let mut coset_generator = omega.pow(&[i as u64]);
                     for r in r.iter_mut() {
                         let mut c = coeffs_for_coset.clone();
-                        serial_fft(&mut c, &coset_generator, log_n);
+                        best_fft(&mut c, &worker, &coset_generator, log_n, num_cpus_hint);
                         *r = c;
                         coset_generator.mul_assign(&omega);
                     }
@@ -538,7 +546,13 @@ impl<F: PrimeField> Polynomial<F, Coefficients> {
             return Ok(self.fft(&worker));
         }
 
-        // asuume num_cpu > factor. TODO: make clever version for another case
+        let num_cpus = worker.cpus;
+        let num_cpus_hint = if num_cpus <= factor {
+            Some(1)
+        } else {
+            let threads_per_coset = factor / num_cpus + 1;
+            Some(threads_per_coset)
+        };
 
         assert!(factor.is_power_of_two());
         let new_size = self.coeffs.len() * factor;
@@ -559,7 +573,7 @@ impl<F: PrimeField> Polynomial<F, Coefficients> {
                     coset_generator.mul_assign(&F::multiplicative_generator());
                     for r in r.iter_mut() {
                         let mut c = coeffs_for_coset.clone();
-                        serial_fft(&mut c, &coset_generator, log_n);
+                        best_fft(&mut c, &worker, &coset_generator, log_n, num_cpus_hint);
                         *r = c;
                         coset_generator.mul_assign(&omega);
                     }
@@ -591,7 +605,7 @@ impl<F: PrimeField> Polynomial<F, Coefficients> {
 
     pub fn fft(mut self, worker: &Worker) -> Polynomial<F, Values>
     {
-        best_fft(&mut self.coeffs, worker, &self.omega, self.exp);
+        best_fft(&mut self.coeffs, worker, &self.omega, self.exp, None);
 
         Polynomial::<F, Values> {
             coeffs: self.coeffs,
@@ -737,7 +751,7 @@ impl<F: PrimeField> Polynomial<F, Values> {
 
     pub fn ifft(mut self, worker: &Worker) -> Polynomial<F, Coefficients>
     {
-        best_fft(&mut self.coeffs, worker, &self.omegainv, self.exp);
+        best_fft(&mut self.coeffs, worker, &self.omegainv, self.exp, None);
 
         worker.scope(self.coeffs.len(), |scope, chunk| {
             let minv = self.minv;
