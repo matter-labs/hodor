@@ -124,7 +124,6 @@ impl<F: PrimeField> DeepALI<F> {
         {
             let z_poly_size = z_coeffs.size();
             let mut z_poly_values = z_coeffs.lde(&worker, d_size / z_poly_size)?;
-            let z_values = z_poly_values.clone().into_coeffs();
             z_poly_values.batch_inversion(&worker)?;
             h1_values.mul_assign(&worker, &z_poly_values);
         }

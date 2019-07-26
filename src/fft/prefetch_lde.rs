@@ -42,9 +42,13 @@ pub(crate) fn serial_lde<F: PrimeField>(a: &mut [F], omega: &F, log_n: u32, lde_
     }
 
     let n = a.len() as u32;
+    let non_trivial_len = (a.len() / lde_factor) as u32;
     assert_eq!(n, 1 << log_n);
 
     for k in 0..n {
+        if k >= non_trivial_len {
+            break;
+        }
         let rk = bitreverse(k, log_n);
         if k < rk {
             a.swap(rk as usize, k as usize);

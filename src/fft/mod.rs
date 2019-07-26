@@ -29,6 +29,11 @@ cfg_if! {
         pub(crate) fn best_fft<F: PrimeField>(a: &mut [F], worker: &Worker, omega: &F, log_n: u32) {
             self::prefetch_fft::best_fft(a, worker, omega, log_n)
         }
+
+        #[inline(always)]
+        pub(crate) fn serial_fft<F: PrimeField>(a: &mut [F], omega: &F, log_n: u32) {
+            self::prefetch_fft::serial_fft(a, omega, log_n)
+        }
     } else {
         #[inline(always)]
         pub(crate) fn best_lde<F: PrimeField>(a: &mut [F], worker: &Worker, omega: &F, log_n: u32, lde_factor: usize) {
@@ -37,6 +42,10 @@ cfg_if! {
         #[inline(always)]
         pub(crate) fn best_fft<F: PrimeField>(a: &mut [F], worker: &Worker, omega: &F, log_n: u32) {
             self::fft::best_fft(a, worker, omega, log_n)
+        }
+        #[inline(always)]
+        pub(crate) fn serial_fft<F: PrimeField>(a: &mut [F], omega: &F, log_n: u32) {
+            self::fft::serial_fft(a, omega, log_n)
         }
     }  
 }
