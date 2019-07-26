@@ -1,10 +1,10 @@
 use ff::PrimeField;
 use super::multicore::*;
 
-pub(crate) fn serial_DIT_fft<F: PrimeField>(a: &mut [F], omega: &F, log_n: u32, non_zero_entries_count: u32)
+pub(crate) fn serial_DIT_fft<F: PrimeField>(a: &mut [F], omega: &F, log_n: u32, non_zero_entries_count: usize)
 {
     #[inline(always)]
-    fn bitreverse(mut n: u32, l: u32) -> u32
+    fn bitreverse(mut n: u64, l: u32) -> u64
     {
         let mut r = 0;
         for _ in 0..l
@@ -24,12 +24,12 @@ pub(crate) fn serial_DIT_fft<F: PrimeField>(a: &mut [F], omega: &F, log_n: u32, 
         let w_m = omega.pow(&[(m-1) as u64]);
         let mut k = 0;
         let mut block = 0;
-        let mut block_len = n / m
+        let mut block_len = n / m;
 
         for block in 0..m
         {
             let mut w = F::one();
-            for k in (block * block_len)..(block * block_len + non_zero_entries_count)
+            for k in (block * block_len)..(block * block_len + (non_zero_entries_count as u64))
             {
                 let mut t = a[(k + block_len / 2) as usize];
                 t.mul_assign(&w);
@@ -60,7 +60,7 @@ pub(crate) fn parallel_DIT_fft<F: PrimeField>(
     omega: &F,
     log_n: u32,
     log_cpus: u32,
-    non_zero_entries_count: u32
+    non_zero_entries_count: usize
 )
 {
     assert!(log_n >= log_cpus);
@@ -82,7 +82,7 @@ pub(crate) fn parallel_DIT_fft<F: PrimeField>(
                 let mut elt = F::one();
                 for i in 0..(1 << log_new_n) {
                     for s in 0..num_cpus {
-                        let idx = (i + (s << log_new_n)) //% (1 << log_n);
+                        let idx = (i + (s << log_new_n)); //% (1 << log_n);
                         let mut t = a[idx];
                         t.mul_assign(&elt);
                         tmp[i].add_assign(&t);
@@ -113,12 +113,10 @@ pub(crate) fn parallel_DIT_fft<F: PrimeField>(
     });
 }
 
-pub(crate) fn best_DIF_fft<F: PrimeField>(a: &mut [F], worker: &Worker, omega: &F, log_n: u32, non_zero_entries_count: u32)
+pub(crate) fn best_DIF_fft<F: PrimeField>(a: &mut [F], worker: &Worker, omega: &F, log_n: u32, non_zero_entries_count: usize)
 {
-    assert!(log_n.is_even()); // TODO: For now
     let log_cpus = worker.log_num_cpus();
 
-    // we split into radix-4 kernels, so we need more points to start
     if log_n <= log_cpus {
         serial_DIT_fft(a, omega, log_n, non_zero_entries_count);
     } else {

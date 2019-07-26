@@ -13,7 +13,6 @@ lazy_static! {
     };
 }
 
-
 pub struct Blake2sLeafEncoder<F: PrimeField> {
     _marker: std::marker::PhantomData<F>
 }

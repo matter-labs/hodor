@@ -30,10 +30,48 @@ cfg_if! {
     }  
 }
 
+pub(crate) mod dit_fft;
+pub(crate) mod radix4_fft;
 
 
+#[test]
+fn test_FFT()
+{
+    use rand::{XorShiftRng, SeedableRng, Rand};
+    const LOG_N: u32 = 4;
+    const N: usize = 1 << LOG_N;
+    let rng = &mut XorShiftRng::from_seed([0x3dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
+    use ff::Field;
+    use crate::experiments::vdf::Fr;
+    use std::time::Instant;
+    use crate::domains::Domain;
 
-// pub(crate) mod radix4_fft;
+    let mut a = (0..N).map(|_| Fr::rand(rng)).collect::<Vec<_>>();
+    let mut b = a.clone();
+    let mut c = a.clone();
+
+    let domain = Domain::<Fr>::new_for_size(a.len() as u64).unwrap();
+    let omega = domain.generator;
+
+    let mut start = Instant::now();
+    fft::serial_fft::<Fr>(&mut a, &omega, LOG_N);
+    let mut end = Instant::now();
+    let radix_2_time = end - start;
+
+    start = Instant::now();
+    dit_fft::serial_DIT_fft::<Fr>(&mut b, &omega, LOG_N, N);
+    end = Instant::now();
+    let radix_4_time = end - start;
+
+    println!("Radix2 time: {}", radix_2_time.as_secs());
+    println!("Radix4 time: {}", radix_4_time.as_secs());
+
+    // println!("{:?}", a);
+    // println!("{:?}", b);
+
+    let matching = a.iter().zip(b.iter()).filter(|(a, b)| *a == *b).count();
+    assert_eq!(matching, N);
+}
 
 // #[cfg(feature = "nightly")]
 // extern crate prefetch;

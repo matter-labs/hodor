@@ -42,6 +42,7 @@ pub(crate) fn serial_fft<F: PrimeField>(a: &mut [F], omega: &F, log_n: u32)
         while k < n {
             let mut w = F::one();
             for j in 0..m {
+                
                 let mut t = a[(k+j+m) as usize];
                 t.mul_assign(&w);
                 let mut tmp = a[(k+j) as usize];
