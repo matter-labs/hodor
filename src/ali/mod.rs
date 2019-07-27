@@ -168,26 +168,29 @@ impl<F: PrimeField> ALI<F> {
     pub fn calculate_g(&mut self, alpha: F) -> Result<(), SynthesisError> {
         // ---------------------
 
-        fn evaluate_constraint_term_into_coefficients<F: PrimeField>(
+        // returns constraint evaluated at coset
+        fn evaluate_constraint_term_into_values<F: PrimeField>(
             term: &ConstraintTerm<F>,
             substituted_witness: &HashMap::<StepDifference<F>, Polynomial<F, Coefficients>>,
             evaluated_univariate_terms: &mut HashMap::<WitnessEvaluationData<F>, Polynomial<F, Values>>,
-            _power_hint: Option<u64>,
+            power_hint: u64,
             worker: &Worker
-        ) -> Result<Polynomial<F, Coefficients>, SynthesisError>
+        ) -> Result<Polynomial<F, Values>, SynthesisError>
         {
+            assert!(power_hint.is_power_of_two());
             let result = match term {
                 ConstraintTerm::Univariate(uni) => {
-                    let t = evaluate_univariate_term_into_coefficients(
+                    let t = evaluate_univariate_term_into_values(
                         uni,
                         substituted_witness,
-                        &worker 
+                        evaluated_univariate_terms, 
+                        power_hint,
+                        worker
                     )?;
 
                     t
                 },
                 ConstraintTerm::Polyvariate(poly) => {
-                    let power_hint = Some(poly.total_degree as u64);
                     let mut values_result: Option<Polynomial<F, Values>> = None;
                     // evaluate subcomponents in a value form and multiply
                     for uni in poly.terms.iter() {
@@ -206,12 +209,8 @@ impl<F: PrimeField> ALI<F> {
                     }
 
                     let as_values = values_result.expect("is some");
-                    // go back into coefficients form and scale
-                    let mut as_coeffs = as_values.ifft(&worker);
 
-                    as_coeffs.scale(&worker, poly.coeff);
-
-                    as_coeffs
+                    as_values
                 }
             };
 
@@ -220,68 +219,30 @@ impl<F: PrimeField> ALI<F> {
 
         // ---------------------
 
-        fn evaluate_univariate_term_into_coefficients<F: PrimeField>(
-            uni: &UnivariateTerm<F>,
-            substituted_witness: &HashMap::<StepDifference<F>, Polynomial<F, Coefficients>>,
-            worker: &Worker
-        ) -> Result<Polynomial<F, Coefficients>, SynthesisError>
-        {
-            let base = substituted_witness.get(&uni.steps_difference).expect("should exist").clone();
-
-            let mut new_base = if uni.power == 1u64 {
-                base
-            } else {
-                let factor = uni.power.next_power_of_two() as usize;
-                let mut into_values = base.lde(&worker, factor)?;
-                into_values.pow(&worker, uni.power);
-
-                into_values.ifft(&worker)
-            };
-
-            let one = F::one();
-            if uni.coeff != one {
-                let mut minus_one = one;
-                minus_one.negate();
-                if uni.coeff == minus_one {
-                    new_base.negate(&worker);
-                } else {
-                    new_base.scale(&worker, uni.coeff);
-                }
-            }
-
-            Ok(new_base)
-        }
-
-        // ---------------------
-
+        // returns univariate term evaluated at coset
         fn evaluate_univariate_term_into_values<F: PrimeField>(
             uni: &UnivariateTerm<F>,
             substituted_witness: &HashMap::<StepDifference<F>, Polynomial<F, Coefficients>>,
             evaluated_univariate_terms: &mut HashMap::<WitnessEvaluationData<F>, Polynomial<F, Values>>,
-            power_hint: Option<u64>, // make space for later multiplications
+            power_hint: u64,
             worker: &Worker
         ) -> Result<Polynomial<F, Values>, SynthesisError>
         {
-            let scale_to_power = if power_hint.is_some() {
-                power_hint.expect("is some") as u64
-            } else {
-                uni.power
-            };
-
+            assert!(power_hint.is_power_of_two());
             let base = substituted_witness.get(&uni.steps_difference).expect("should exist").clone();
             let base_len = base.size() as u64;
 
             let evaluation_data = WitnessEvaluationData {
                 mask: uni.steps_difference,
                 power: uni.power,
-                total_lde_length: scale_to_power*base_len
+                total_lde_length: power_hint * base_len
             };
 
             if let Some(e) = evaluated_univariate_terms.get(&evaluation_data) {
                 return Ok(e.clone());
             }
 
-            let factor = scale_to_power.next_power_of_two() as usize;
+            let factor = power_hint as usize;
             let mut base = base.lde(&worker, factor)?;
             base.pow(&worker, uni.power);
 
@@ -391,6 +352,7 @@ impl<F: PrimeField> ALI<F> {
 
         // ---------------------
 
+        // TODO: rework
         fn evaluate_boundary_constraint<F: PrimeField>(
             b_constraint: &BoundaryConstraint<F>,
             substituted_witness: &HashMap::<StepDifference<F>, Polynomial<F, Coefficients>>
@@ -408,7 +370,9 @@ impl<F: PrimeField> ALI<F> {
         let worker = Worker::new();
         let num_registers_sup = self.num_registers.next_power_of_two();
         let num_steps_sup = self.num_steps.next_power_of_two();
+        assert!(self.max_constraint_power.is_power_of_two());
         let g_size = num_registers_sup * num_steps_sup * self.max_constraint_power;
+        let power_hint = self.max_constraint_power.next_power_of_two() as u64;
 
         let mut g_poly = Polynomial::<F, Coefficients>::new_for_size(g_size)?;
         let subterm_coefficients = Polynomial::<F, Coefficients>::new_for_size(g_size)?;
@@ -416,6 +380,7 @@ impl<F: PrimeField> ALI<F> {
         let mut current_coeff = F::one();
 
         let subterm_domain = Domain::new_for_size(subterm_coefficients.size() as u64)?;
+        let subterm_values = Polynomial::<F, Values>::new_for_size(g_size)?;
 
         let mut evaluated_terms_map: HashMap::<WitnessEvaluationData<F>, Polynomial<F, Values>> = HashMap::new();
 
@@ -433,7 +398,7 @@ impl<F: PrimeField> ALI<F> {
         }
 
         for (density, constraints) in constraints_batched_by_density.into_iter() {
-            let mut per_density_coefficients = subterm_coefficients.clone();
+            let mut per_density_values = subterm_values.clone();
 
             // TODO: Refactor constraints definitions
             let c0 = constraints[0].clone();
@@ -477,26 +442,28 @@ impl<F: PrimeField> ALI<F> {
                 current_coeff.mul_assign(&alpha);
 
                 for term in constraint.terms.iter() {
-                    let evaluated_term = evaluate_constraint_term_into_coefficients(
+                    let evaluated_term = evaluate_constraint_term_into_values(
                         &term, 
                         &self.mask_applied_polynomials,
                         &mut evaluated_terms_map,
-                        None,
+                        power_hint,
                         &worker
                     )?;
 
-                    per_density_coefficients.add_assign_scaled(&worker, &evaluated_term, &current_coeff);
+                    per_density_values.add_assign_scaled(&worker, &evaluated_term, &current_coeff);
                 }
 
-                per_density_coefficients.as_mut()[0].add_assign(&constraint.constant_term);
+                let mut constant_term = constraint.constant_term;
+                constant_term.mul_assign(&current_coeff);
+
+                per_density_values.as_mut()[0].add_assign(&constant_term);
             }
 
             
             // these values are correct and are evaluations of some polynomial at points (gen, gen * omega, gen * omega*2)
-            let mut per_density_in_coset = per_density_coefficients.coset_fft(&worker);
-            per_density_in_coset.mul_assign(&worker, &inverse_divisors);
+            per_density_values.mul_assign(&worker, &inverse_divisors);
 
-            let per_density_coefficients = per_density_in_coset.icoset_fft(&worker);
+            let per_density_coefficients = per_density_values.icoset_fft(&worker);
 
             g_poly.add_assign(&worker, &per_density_coefficients);
         }

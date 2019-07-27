@@ -427,7 +427,7 @@ impl<F: PrimeField> Polynomial<F, Coefficients> {
         let num_cpus_hint = if num_cpus <= factor {
             Some(1)
         } else {
-            let threads_per_coset = factor / num_cpus + 1;
+            let threads_per_coset = (factor - 1) / num_cpus + 1;
             Some(threads_per_coset)
         };
 
@@ -550,7 +550,7 @@ impl<F: PrimeField> Polynomial<F, Coefficients> {
         let num_cpus_hint = if num_cpus <= factor {
             Some(1)
         } else {
-            let threads_per_coset = factor / num_cpus + 1;
+            let threads_per_coset = (factor - 1) / num_cpus + 1;
             Some(threads_per_coset)
         };
 
@@ -801,6 +801,22 @@ impl<F: PrimeField> Polynomial<F, Values> {
                 scope.spawn(move |_| {
                     for (a, b) in a.iter_mut().zip(b.iter()) {
                         a.add_assign(&b);
+                    }
+                });
+            }
+        });
+    }
+
+    pub fn add_assign_scaled(&mut self, worker: &Worker, other: &Polynomial<F, Values>, scaling: &F) {
+        assert_eq!(self.coeffs.len(), other.coeffs.len());
+
+        worker.scope(other.coeffs.len(), |scope, chunk| {
+            for (a, b) in self.coeffs.chunks_mut(chunk).zip(other.coeffs.chunks(chunk)) {
+                scope.spawn(move |_| {
+                    for (a, b) in a.iter_mut().zip(b.iter()) {
+                        let mut tmp = *b;
+                        tmp.mul_assign(&scaling);
+                        a.add_assign(&tmp);
                     }
                 });
             }
