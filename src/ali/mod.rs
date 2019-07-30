@@ -168,7 +168,7 @@ impl<F: PrimeField> ALI<F> {
     pub fn calculate_g(&mut self, alpha: F) -> Result<(), SynthesisError> {
         // ---------------------
 
-        // returns constraint evaluated at coset
+        // returns constraint evaluated in the coset
         fn evaluate_constraint_term_into_values<F: PrimeField>(
             term: &ConstraintTerm<F>,
             substituted_witness: &HashMap::<StepDifference<F>, Polynomial<F, Coefficients>>,
@@ -208,7 +208,8 @@ impl<F: PrimeField> ALI<F> {
                         }
                     }
 
-                    let as_values = values_result.expect("is some");
+                    let mut as_values = values_result.expect("is some");
+                    as_values.scale(&worker, poly.coeff);
 
                     as_values
                 }
@@ -239,12 +240,25 @@ impl<F: PrimeField> ALI<F> {
             };
 
             if let Some(e) = evaluated_univariate_terms.get(&evaluation_data) {
-                return Ok(e.clone());
+                let mut base = e.clone();
+                let one = F::one();
+                if uni.coeff != one {
+                    let mut minus_one = one;
+                    minus_one.negate();
+                    if uni.coeff == minus_one {
+                        base.negate(&worker);
+                    } else {
+                        base.scale(&worker, uni.coeff);
+                    }
+                }
+                return Ok(base);
             }
 
             let factor = power_hint as usize;
-            let mut base = base.lde(&worker, factor)?;
+            let mut base = base.coset_lde(&worker, factor)?;
             base.pow(&worker, uni.power);
+
+            evaluated_univariate_terms.insert(evaluation_data, base.clone());
 
             let one = F::one();
             if uni.coeff != one {
@@ -256,8 +270,6 @@ impl<F: PrimeField> ALI<F> {
                     base.scale(&worker, uni.coeff);
                 }
             }
-
-            evaluated_univariate_terms.insert(evaluation_data, base.clone());
 
             Ok(base)
         }
@@ -338,7 +350,7 @@ impl<F: PrimeField> ALI<F> {
                                 tmp.sub_assign(&root);
                                 d.mul_assign(&tmp);
                             } 
-                            // alpha / ( (X^T-1) / (X - 1)(X - omega)(...) ) = alpha * (X - 1)(X - omega)(...) / (X^T-1)
+                            // 1 / ( (X^T-1) / (X - 1)(X - omega)(...) ) =  (X - 1)(X - omega)(...) / (X^T-1)
                             *v = d;
 
                             x.mul_assign(&evaluation_domain_generator);
@@ -352,8 +364,8 @@ impl<F: PrimeField> ALI<F> {
 
         // ---------------------
 
-        // TODO: rework
-        fn evaluate_boundary_constraint<F: PrimeField>(
+        // TODO: Check what strategy is better
+        fn evaluate_boundary_constraint_into_coeffs<F: PrimeField>(
             b_constraint: &BoundaryConstraint<F>,
             substituted_witness: &HashMap::<StepDifference<F>, Polynomial<F, Coefficients>>
         ) -> Result<Polynomial<F, Coefficients>, SynthesisError>
@@ -364,6 +376,23 @@ impl<F: PrimeField> ALI<F> {
 
             Ok(result)
         }
+
+        // fn evaluate_boundary_constraint_into_values<F: PrimeField>(
+        //     b_constraint: &BoundaryConstraint<F>,
+        //     substituted_witness: &HashMap::<StepDifference<F>, Polynomial<F, Coefficients>>,
+        //     power_hint: u64,
+        //     alpha: &F,
+        //     beta: &F,
+        // ) -> Result<Polynomial<F, Coefficients>, SynthesisError>
+        // {
+        //     let boundary_constraint_mask = StepDifference::Mask(F::one());
+        //     let mut result = substituted_witness.get(&boundary_constraint_mask).expect("is some").clone();
+        //     result.as_mut()[0].sub_assign(&b_constraint.value.expect("is some"));
+        //     let result = result.lde(&worker, power_hint as usize)?;
+        //     // mul by alpha*X^(hint - 1) + beta
+
+        //     Ok(result)
+        // }
 
         // ---------------------
 
@@ -396,6 +425,8 @@ impl<F: PrimeField> ALI<F> {
                 constraints_batched_by_density.insert(constraint.density, vec![constraint.clone()]);
             }
         }
+
+        // println!("Batches = {:?}", constraints_batched_by_density);
 
         for (density, constraints) in constraints_batched_by_density.into_iter() {
             let mut per_density_values = subterm_values.clone();
@@ -438,6 +469,8 @@ impl<F: PrimeField> ALI<F> {
                 }
             };
 
+            let mut accumulated_constant_terms = F::zero();
+
             for constraint in constraints.into_iter() {
                 current_coeff.mul_assign(&alpha);
 
@@ -456,9 +489,10 @@ impl<F: PrimeField> ALI<F> {
                 let mut constant_term = constraint.constant_term;
                 constant_term.mul_assign(&current_coeff);
 
-                per_density_values.as_mut()[0].add_assign(&constant_term);
+                accumulated_constant_terms.add_assign(&constant_term);
             }
 
+            per_density_values.add_constant(&worker, &accumulated_constant_terms);
             
             // these values are correct and are evaluations of some polynomial at points (gen, gen * omega, gen * omega*2)
             per_density_values.mul_assign(&worker, &inverse_divisors);
@@ -555,7 +589,7 @@ impl<F: PrimeField> ALI<F> {
 
             let mut subterm_coefficients = subterm_coefficients.clone();
 
-            let evaluated_term = evaluate_boundary_constraint(
+            let evaluated_term = evaluate_boundary_constraint_into_coeffs(
                 &b_constraint, 
                 &self.mask_applied_polynomials
             )?;
@@ -590,6 +624,7 @@ impl<F: PrimeField> ALI<F> {
 
 #[test]
 fn test_fib_conversion_into_ali() {
+    use ff::Field;
     use crate::Fr;
     use crate::air::Fibonacci;
     use crate::air::TestTraceSystem;
@@ -617,6 +652,7 @@ fn test_fib_conversion_into_ali() {
 
     let g_poly_interpolant = ali.g_poly.take().expect("is something");
     println!("G coefficients = {:?}", g_poly_interpolant);
+    assert!(g_poly_interpolant.as_ref()[7].is_zero());
     let worker = Worker::new();
     let g_values = g_poly_interpolant.fft(&worker);
     println!("G values = {:?}", g_values);

@@ -46,17 +46,7 @@ impl<F: PrimeField, P: PolynomialForm> Polynomial<F, P> {
 
     pub fn distribute_powers(&mut self, worker: &Worker, g: F)
     {
-        worker.scope(self.coeffs.len(), |scope, chunk| {
-            for (i, v) in self.coeffs.chunks_mut(chunk).enumerate() {
-                scope.spawn(move |_| {
-                    let mut u = g.pow(&[(i * chunk) as u64]);
-                    for v in v.iter_mut() {
-                        v.mul_assign(&u);
-                        u.mul_assign(&g);
-                    }
-                });
-            }
-        });
+        distribute_powers(&mut self.coeffs, &worker, g);
     }
 
     pub fn scale(&mut self, worker: &Worker, g: F)
@@ -483,7 +473,7 @@ impl<F: PrimeField> Polynomial<F, Coefficients> {
         Polynomial::from_values(final_values)
     }
 
-    pub fn filtering_coset_lde(mut self, worker: &Worker, factor: usize) -> Result<Polynomial<F, Values>, SynthesisError> {
+    pub fn coset_filtering_lde(mut self, worker: &Worker, factor: usize) -> Result<Polynomial<F, Values>, SynthesisError> {
         if factor == 1 {
             return Ok(self.coset_fft(&worker));
         }
@@ -502,7 +492,7 @@ impl<F: PrimeField> Polynomial<F, Coefficients> {
 
     pub fn coset_lde_using_multiple_cosets_naive(self, worker: &Worker, factor: usize) -> Result<Polynomial<F, Values>, SynthesisError> {
         if factor == 1 {
-            return Ok(self.fft(&worker));
+            return Ok(self.coset_fft(&worker));
         }
         assert!(factor.is_power_of_two());
         let new_size = self.coeffs.len() * factor;
@@ -545,7 +535,7 @@ impl<F: PrimeField> Polynomial<F, Coefficients> {
 
     pub fn coset_lde_using_multiple_cosets(self, worker: &Worker, factor: usize) -> Result<Polynomial<F, Values>, SynthesisError> {
         if factor == 1 {
-            return Ok(self.fft(&worker));
+            return Ok(self.coset_fft(&worker));
         }
 
         let num_cpus = worker.cpus;
@@ -811,6 +801,18 @@ impl<F: PrimeField> Polynomial<F, Values> {
         });
     }
 
+    pub fn add_constant(&mut self, worker: &Worker, constant: &F) {
+        worker.scope(self.coeffs.len(), |scope, chunk| {
+            for a in self.coeffs.chunks_mut(chunk) {
+                scope.spawn(move |_| {
+                    for a in a.iter_mut() {
+                        a.add_assign(&constant);
+                    }
+                });
+            }
+        });
+    }
+
     pub fn add_assign_scaled(&mut self, worker: &Worker, other: &Polynomial<F, Values>, scaling: &F) {
         assert_eq!(self.coeffs.len(), other.coeffs.len());
 
@@ -992,6 +994,55 @@ fn test_lde_correctness() {
     let p2 = Polynomial::from_coeffs(coeffs).unwrap();
     let now = Instant::now();
     let naive_lde = p2.fft(&worker);
+    println!("Naive FFT taken {}ms", now.elapsed().as_millis());
+
+    let f = filtering_lde.into_coeffs();
+    let n = naive_lde.into_coeffs();
+    let c = coset_lde.into_coeffs();
+
+    assert!(f == n);
+    assert!(c == n);
+}
+
+
+#[test]
+fn test_coset_lde_correctness() {
+    use rand::{XorShiftRng, SeedableRng, Rand};
+    const LOG_N: usize = 2;
+    const BASE: usize = 1 << LOG_N;
+    const LOG_LDE: usize = 4;
+    const LDE_FACTOR: usize = 1 << LOG_LDE;
+    let rng = &mut XorShiftRng::from_seed([0x3dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
+
+    use ff::Field;
+    use crate::experiments::vdf::Fr;
+    use crate::fft::multicore::Worker;
+    use crate::polynomials::Polynomial;
+    use std::time::Instant;
+
+    let worker = Worker::new();
+
+    let mut coeffs = (0..BASE).map(|_| Fr::rand(rng)).collect::<Vec<_>>();
+
+    let poly = Polynomial::from_coeffs(coeffs.clone()).unwrap();
+
+    let p0 = poly.clone();
+    let now = Instant::now();
+    // let coset_lde = p0.coset_lde(&worker, LDE_FACTOR).unwrap();
+    let coset_lde = p0.coset_lde_using_multiple_cosets(&worker, LDE_FACTOR).unwrap();
+    println!("LDE with multiple cosets taken {}ms", now.elapsed().as_millis());
+
+    let p1 = poly.clone();
+    let now = Instant::now();
+    let filtering_lde = p1.coset_filtering_lde(&worker, LDE_FACTOR).unwrap();
+    println!("filtering LDE taken {}ms", now.elapsed().as_millis());
+
+    let c = coeffs.clone();
+    coeffs.resize(BASE * LDE_FACTOR, Fr::zero());
+
+    let p2 = Polynomial::from_coeffs(coeffs).unwrap();
+    let now = Instant::now();
+    let naive_lde = p2.coset_fft(&worker);
     println!("Naive FFT taken {}ms", now.elapsed().as_millis());
 
     let f = filtering_lde.into_coeffs();
