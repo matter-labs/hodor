@@ -426,8 +426,6 @@ impl<F: PrimeField> ALI<F> {
             }
         }
 
-        // println!("Batches = {:?}", constraints_batched_by_density);
-
         for (density, constraints) in constraints_batched_by_density.into_iter() {
             let mut per_density_values = subterm_values.clone();
 
@@ -441,7 +439,7 @@ impl<F: PrimeField> ALI<F> {
                     unimplemented!()
                 }
             };
-            
+
             let inverse_divisors = match self.inversed_divisors_in_cosets.get(&density) {
                 Some(div) => {
                     div.clone()
@@ -502,68 +500,6 @@ impl<F: PrimeField> ALI<F> {
             g_poly.add_assign(&worker, &per_density_coefficients);
         }
 
-        // for constraint in self.constraints.iter() {
-        //     current_coeff.mul_assign(&alpha);
-            
-        //     let mut subterm_coefficients = subterm_coefficients.clone();
-
-        //     let mut inverse_divisors = match self.inversed_divisors_in_cosets.get(&constraint.density) {
-        //         Some(div) => {
-        //             div.clone()
-        //         },
-        //         _ => {
-        //             let (inverse_divisors, _divisor_degree) = match constraint.density {
-        //                 ConstraintDensity::Dense => {
-        //                     let start_at = constraint.start_at as u64;
-
-        //                     let result = inverse_divisor_for_dense_constraint_in_coset(
-        //                         &self.column_domain,
-        //                         &subterm_domain, 
-        //                         start_at,
-        //                         self.num_steps as u64,
-        //                         &worker
-        //                     )?;
-
-        //                     result
-        //                 },
-        //                 _ => {
-        //                     unimplemented!();
-        //                 }
-        //             };
-        //             self.inversed_divisors_in_cosets.insert(constraint.density, inverse_divisors.clone());
-
-        //             inverse_divisors
-        //         }
-        //     };
-
-        //     // first we need to calculate denominator at the value
-
-        //     inverse_divisors.scale(&worker, current_coeff);
-
-        //     for term in constraint.terms.iter() {
-        //         let evaluated_term = evaluate_constraint_term_into_coefficients(
-        //             &term, 
-        //             &self.mask_applied_polynomials,
-        //             &mut evaluated_terms_map,
-        //             None,
-        //             &worker
-        //         )?;
-
-        //         subterm_coefficients.add_assign(&worker, &evaluated_term);
-        //     }
-
-        //     subterm_coefficients.as_mut()[0].add_assign(&constraint.constant_term);
-
-        //     // these values are correct and are evaluations of some polynomial at points (gen, gen * omega, gen * omega*2)
-        //     let mut subterm_values_in_coset = subterm_coefficients.coset_fft(&worker);
-
-        //     subterm_values_in_coset.mul_assign(&worker, &inverse_divisors);
-
-        //     let subterm_coefficients = subterm_values_in_coset.icoset_fft(&worker);
-
-        //     g_poly.add_assign(&worker, &subterm_coefficients);
-        // }
-
         for b_constraint in self.boundary_constraints.iter() {
             current_coeff.mul_assign(&alpha);
 
@@ -614,8 +550,7 @@ impl<F: PrimeField> ALI<F> {
 
             g_poly.add_assign(&worker, &subterm_coefficients);
         }
-
-
+        
         self.g_poly = Some(g_poly);
 
         Ok(())
