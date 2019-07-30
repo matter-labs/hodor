@@ -439,7 +439,8 @@ impl<F: PrimeField> Polynomial<F, Coefficients> {
 
         let mut results = vec![vec![]; factor];
 
-        let omega = domain.generator;
+        let coset_omega = domain.generator;
+        let this_domain_omega = self.omega;
 
         let coeffs = self.coeffs;
         let log_n = self.exp;
@@ -448,12 +449,13 @@ impl<F: PrimeField> Polynomial<F, Coefficients> {
             for (i, r) in results.chunks_mut(chunk).enumerate() {
                 let coeffs_for_coset = coeffs.clone();
                 scope.spawn(move |_| {
-                    let mut coset_generator = omega.pow(&[i as u64]);
+                    let mut coset_generator = coset_omega.pow(&[i as u64]);
                     for r in r.iter_mut() {
                         let mut c = coeffs_for_coset.clone();
-                        best_fft(&mut c, &worker, &coset_generator, log_n, num_cpus_hint);
+                        distribute_powers(&mut c, &worker, coset_generator);
+                        best_fft(&mut c, &worker, &this_domain_omega, log_n, num_cpus_hint);
                         *r = c;
-                        coset_generator.mul_assign(&omega);
+                        coset_generator.mul_assign(&coset_omega);
                     }
                 });
             }
@@ -560,7 +562,8 @@ impl<F: PrimeField> Polynomial<F, Coefficients> {
 
         let mut results = vec![vec![]; factor];
 
-        let omega = domain.generator;
+        let coset_omega = domain.generator;
+        let this_domain_omega = self.omega;
 
         let coeffs = self.coeffs;
         let log_n = self.exp;
@@ -569,13 +572,14 @@ impl<F: PrimeField> Polynomial<F, Coefficients> {
             for (i, r) in results.chunks_mut(chunk).enumerate() {
                 let coeffs_for_coset = coeffs.clone();
                 scope.spawn(move |_| {
-                    let mut coset_generator = omega.pow(&[i as u64]);
+                    let mut coset_generator = coset_omega.pow(&[i as u64]);
                     coset_generator.mul_assign(&F::multiplicative_generator());
                     for r in r.iter_mut() {
                         let mut c = coeffs_for_coset.clone();
-                        best_fft(&mut c, &worker, &coset_generator, log_n, num_cpus_hint);
+                        distribute_powers(&mut c, &worker, coset_generator);
+                        best_fft(&mut c, &worker, &this_domain_omega, log_n, num_cpus_hint);
                         *r = c;
-                        coset_generator.mul_assign(&omega);
+                        coset_generator.mul_assign(&coset_omega);
                     }
                 });
             }
@@ -952,6 +956,53 @@ fn test_batch_inversion() {
 }
 
 #[test]
+fn test_lde_correctness() {
+    use rand::{XorShiftRng, SeedableRng, Rand};
+    const LOG_N: usize = 2;
+    const BASE: usize = 1 << LOG_N;
+    const LOG_LDE: usize = 4;
+    const LDE_FACTOR: usize = 1 << LOG_LDE;
+    let rng = &mut XorShiftRng::from_seed([0x3dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
+
+    use ff::Field;
+    use crate::experiments::vdf::Fr;
+    use crate::fft::multicore::Worker;
+    use crate::polynomials::Polynomial;
+    use std::time::Instant;
+
+    let worker = Worker::new();
+
+    let mut coeffs = (0..BASE).map(|_| Fr::rand(rng)).collect::<Vec<_>>();
+
+    let poly = Polynomial::from_coeffs(coeffs.clone()).unwrap();
+
+    let p0 = poly.clone();
+    let now = Instant::now();
+    let coset_lde = p0.lde_using_multiple_cosets(&worker, LDE_FACTOR).unwrap();
+    println!("LDE with multiple cosets taken {}ms", now.elapsed().as_millis());
+
+    let p1 = poly.clone();
+    let now = Instant::now();
+    let filtering_lde = p1.filtering_lde(&worker, LDE_FACTOR).unwrap();
+    println!("filtering LDE taken {}ms", now.elapsed().as_millis());
+
+    let c = coeffs.clone();
+    coeffs.resize(BASE * LDE_FACTOR, Fr::zero());
+
+    let p2 = Polynomial::from_coeffs(coeffs).unwrap();
+    let now = Instant::now();
+    let naive_lde = p2.fft(&worker);
+    println!("Naive FFT taken {}ms", now.elapsed().as_millis());
+
+    let f = filtering_lde.into_coeffs();
+    let n = naive_lde.into_coeffs();
+    let c = coset_lde.into_coeffs();
+
+    assert!(f == n);
+    assert!(c == n);
+}
+
+#[test]
 fn test_various_ldes() {
     use rand::{XorShiftRng, SeedableRng, Rand};
     const LOG_N: usize = 22;
@@ -962,7 +1013,6 @@ fn test_various_ldes() {
 
     use ff::Field;
     use crate::experiments::vdf::Fr;
-    use crate::domains::Domain;
     use crate::fft::multicore::Worker;
     use crate::polynomials::Polynomial;
     use std::time::Instant;
@@ -998,7 +1048,6 @@ fn test_various_ldes() {
     let now = Instant::now();
     crate::fft::fft::serial_fft(&mut c, &naive_lde.omega, LOG_N as u32);
     println!("Serial small FFT taken {}ms", now.elapsed().as_millis());
-
 
     let f = filtering_lde.into_coeffs();
     let n = naive_lde.into_coeffs();

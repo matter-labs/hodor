@@ -49,6 +49,21 @@ cfg_if! {
     }  
 }
 
+pub fn distribute_powers<F: PrimeField>(coeffs: &mut [F], worker: &Worker, g: F)
+{
+    worker.scope(coeffs.len(), |scope, chunk| {
+        for (i, v) in coeffs.chunks_mut(chunk).enumerate() {
+            scope.spawn(move |_| {
+                let mut u = g.pow(&[(i * chunk) as u64]);
+                for v in v.iter_mut() {
+                    v.mul_assign(&u);
+                    u.mul_assign(&g);
+                }
+            });
+        }
+    });
+}
+
 
 
 
