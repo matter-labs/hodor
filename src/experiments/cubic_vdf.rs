@@ -4,6 +4,7 @@ use crate::air::*;
 use crate::fft::multicore::Worker;
 use crate::ali::*;
 use crate::arp::*;
+use crate::arp::*;
 use crate::iop::*;
 use crate::iop::blake2s_trivial_iop::Blake2sIopTree;
 
@@ -16,7 +17,7 @@ pub struct CubicVDF<F: PrimeField> {
 }
 
 impl<F: PrimeField> IntoARP<F> for CubicVDF<F> {
-    fn into_arp(self) -> ARP<F> {
+    fn into_arp(self) -> (Option<Vec<Vec<F>>>, InstanceProperties<F>) {
         fn square<F: PrimeField>(el: (F, F), non_residue: &F) -> (F, F) {
             let (mut c0, mut c1) = el;
             let mut two_c0_c1 = c0;
@@ -140,8 +141,7 @@ impl<F: PrimeField> IntoARP<F> for CubicVDF<F> {
 
         // intermediate c0 = c0^2 + r*c1^2 
         let mut constraint_0 = Constraint::default();
-        constraint_0.start_at = 0;
-        constraint_0.density = ConstraintDensity::Dense;
+        constraint_0.density = ConstraintDensity::default();
 
         constraint_0 -= c0_squared;
         constraint_0 -= c1_squared_by_r;
@@ -150,8 +150,7 @@ impl<F: PrimeField> IntoARP<F> for CubicVDF<F> {
         // same for intermediate c1
 
         let mut constraint_1 = Constraint::default();
-        constraint_1.start_at = 0;
-        constraint_1.density = ConstraintDensity::Dense;
+        constraint_1.density = ConstraintDensity::default();
 
         constraint_1 -= two_c0_c1;
         constraint_1 += squaring_step_intermediate_c1;
@@ -171,8 +170,7 @@ impl<F: PrimeField> IntoARP<F> for CubicVDF<F> {
         };
 
         let mut constraint_2 = Constraint::default();
-        constraint_2.start_at = 0;
-        constraint_2.density = ConstraintDensity::Dense;
+        constraint_2.density = ConstraintDensity::default();
 
         constraint_2 -= c0_by_intermediate;
         constraint_2 -= r_c1_by_intermediate;
@@ -193,15 +191,13 @@ impl<F: PrimeField> IntoARP<F> for CubicVDF<F> {
         };
 
         let mut constraint_3 = Constraint::default();
-        constraint_3.start_at = 0;
-        constraint_3.density = ConstraintDensity::Dense;
+        constraint_3.density = ConstraintDensity::default();
 
         constraint_3 -= c0_by_intermediate_c1;
         constraint_3 -= c1_by_intermediate_c0;
         constraint_3 += c1_value_next_step;
 
         let num_values = self.num_operations + 1;
-
 
         let mut c0_witness = vec![F::zero(); num_values];
         c0_witness[0] = self.start_c0;
@@ -214,7 +210,6 @@ impl<F: PrimeField> IntoARP<F> for CubicVDF<F> {
 
         c0_squaring_witness[0] = tmp.0;
         c1_squaring_witness[0] = tmp.1;
-
 
         let mut v0 = self.start_c0;
         let mut v1 = self.start_c1;
@@ -237,35 +232,36 @@ impl<F: PrimeField> IntoARP<F> for CubicVDF<F> {
         // add boundaty constraints
         let initial_c0_constraint = BoundaryConstraint::<F> {
             register: c0_register,
-            at_step: 0,
+            at_row: 0,
             value: Some(self.start_c0)
         };
+
         let initial_c1_constraint = BoundaryConstraint::<F> {
             register: c1_register,
-            at_step: 0,
+            at_row: 0,
             value: Some(self.start_c1)
         };
 
         let final_c0_constraint = BoundaryConstraint::<F> {
             register: c0_register,
-            at_step: self.num_operations + 1,
+            at_row: self.num_operations + 1,
             value: c0_witness.last().cloned()
         };
 
         let final_c1_constraint = BoundaryConstraint::<F> {
             register: c1_register,
-            at_step: self.num_operations + 1,
+            at_row: self.num_operations + 1,
             value: c1_witness.last().cloned()
         };
 
-        ARP::<F> {
-            witness: Some(vec![c0_witness, c1_witness, c0_squaring_witness, c1_squaring_witness]),
-            witness_poly: None,
-            num_steps: self.num_operations,
+        let props = InstanceProperties::<F> {
+            num_rows: self.num_operations + 1,
             num_registers: num_registers,
             constraints: vec![constraint_0, constraint_1, constraint_2, constraint_3],
             boundary_constraints: vec![initial_c0_constraint, initial_c1_constraint, final_c0_constraint, final_c1_constraint]
-        }
+        };
+
+        (Some(vec![c0_witness, c1_witness, c0_squaring_witness, c1_squaring_witness]), props)
     }
 }
 
@@ -274,6 +270,8 @@ fn try_prove_cubic_vdf() {
     use std::time::Instant;
     use crate::iop::blake2s_trivial_iop::TrivialBlake2sIOP;
     use crate::fri::*;
+    use crate::transcript::*;
+    use crate::ali::per_register::*;
 
     let vdf_instance = CubicVDF::<Fr> {
         start_c0: Fr::one(),
@@ -285,64 +283,66 @@ fn try_prove_cubic_vdf() {
 
     let lde_factor = 16;
 
+    let mut transcript = Blake2sTranscript::new();
+
     let total_start = Instant::now();
 
     let start = Instant::now();
-
-    let mut arp = ARP::new(vdf_instance);
+    let (witness, props) = vdf_instance.into_arp();
     println!("Done preraping and calculating VFD in {} ms", start.elapsed().as_millis());
 
+    let witness = witness.expect("some witness");
+    let arp = ARPInstance::<Fr, PerRegisterARP>::from_instance(props, &worker).expect("must work");
+
     let start = Instant::now();
+    let witness_polys = arp.calculate_witness_polys(witness, &worker).expect("must work");
+    println!("Witness polys taken {} ms", start.elapsed().as_millis());
 
-    arp.route_into_single_witness_poly().expect("must work");
-
-    let f_witness_interpolant = arp.witness_poly.clone().expect("is something");
-    let f_witness_interpolant = match f_witness_interpolant {
-        WitnessPolynomial::Single(f) => {
-            f
-        },
-        _ => {
-            unreachable!();
-        }
-    };
-
-    let f_lde = f_witness_interpolant.lde(&worker, lde_factor).expect("is something");
-    println!("F LDE is done after {} ms", start.elapsed().as_millis());
     let start = Instant::now();
+    let f_ldes: Vec<_> = witness_polys.iter().map(|w| {
+        w.clone().lde(&worker, lde_factor).expect("must work")
+    }).collect();
+    println!("F LDEs is done after {} ms", start.elapsed().as_millis());
 
-    let f_oracle = Blake2sIopTree::create(f_lde.as_ref());
-    println!("F oracle is done after {} ms", start.elapsed().as_millis());
     let start = Instant::now();
+    let f_oracles: Vec<_> = f_ldes.iter().map(|l|
+        Blake2sIopTree::create(l.as_ref())
+    ).collect(); 
+    println!("F oracles is done after {} ms", start.elapsed().as_millis());
 
-    let mut ali = ALI::from(arp);
-    let alpha = f_oracle.get_challenge_scalar_from_root();
-    // let alpha = Fr::from_str("123").unwrap();
-    ali.calculate_g(alpha).expect("must work");
+    for o in f_oracles.iter() {
+        transcript.commit_bytes(&o.get_root()[..]);
+    }
 
-    println!("G is calculated after {} ms", start.elapsed().as_millis());
     let start = Instant::now();
+    let ali = ALIInstance::from_arp(arp, &worker).expect("is some");
+    println!("ALI prepares after {} ms", start.elapsed().as_millis());
 
-    let g_poly_interpolant = ali.g_poly.clone().expect("is something");
-    let g_lde = g_poly_interpolant.lde(&worker, lde_factor).expect("is something");
+    let start = Instant::now();
+    let g_poly_interpolant = ali.calculate_g(&mut transcript, witness_polys.clone(), &worker).expect("is some");
+    println!("G poly after {} ms", start.elapsed().as_millis());
 
+    let start = Instant::now();
+    let g_lde = g_poly_interpolant.clone().lde(&worker, lde_factor).expect("is something");
     println!("G LDE is done after {} ms", start.elapsed().as_millis());
-    let start = Instant::now();
 
+    let start = Instant::now();
     let g_oracle = Blake2sIopTree::create(g_lde.as_ref());
     let z = g_oracle.get_challenge_scalar_from_root();
-    // let z = Fr::from_str("62").unwrap();
-
     println!("G oracle is done after {} ms", start.elapsed().as_millis());
+
     let start = Instant::now();
-
-    let mut deep_ali = DeepALI::from(ali);
-    deep_ali.make_deep(f_lde, g_lde, z).expect("must work");
-
+    let (h1_lde, h2_lde) = ali.calculate_deep(
+        &witness_polys,
+        &f_ldes,
+        &g_poly_interpolant,
+        &g_lde,
+        &mut transcript,
+        &worker
+    ).expect("must work");
     println!("H1 and H2 oracles done after {} ms", start.elapsed().as_millis());
-    println!("Total proving time w/o FRI is {} ms", total_start.elapsed().as_millis());
 
-    let h1_lde = deep_ali.h_1_poly.take().expect("is something");
-    let h2_lde = deep_ali.h_2_poly.take().expect("is something");
+    println!("Total proving time w/o FRI is {} ms", total_start.elapsed().as_millis());
 
     let h1_fri_proof = FRIIOP::<Fr, TrivialBlake2sIOP<Fr>>::proof_from_lde_by_values(&h1_lde, lde_factor, 1, &worker);
     let h2_fri_proof = FRIIOP::<Fr, TrivialBlake2sIOP<Fr>>::proof_from_lde_by_values(&h2_lde, lde_factor, 1, &worker);

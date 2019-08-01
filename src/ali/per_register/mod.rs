@@ -1,4 +1,5 @@
 use ff::PrimeField;
+
 use crate::polynomials::*;
 use crate::arp::*;
 use crate::air::*;
@@ -8,6 +9,8 @@ use crate::domains::*;
 use crate::precomputations::*;
 use crate::transcript::Transcript;
 use std::collections::{HashMap, HashSet};
+
+pub mod deep;
 
 pub struct ALIInstance<F: PrimeField, T: ARPType> {
     pub properties: InstanceProperties<F>,
@@ -52,7 +55,7 @@ impl<F: PrimeField> std::hash::Hash for WitnessEvaluationData<F> {
 }
 
 impl<F: PrimeField> ALIInstance<F, PerRegisterARP> {
-    fn from_arp(
+    pub fn from_arp(
         arp: ARPInstance<F, PerRegisterARP>, 
         worker: &Worker
     ) -> Result<ALIInstance<F, PerRegisterARP>, SynthesisError> {
@@ -532,20 +535,6 @@ impl<F: PrimeField> ALIInstance<F, PerRegisterARP> {
             g_values.add_assign(&worker, &batch_values);
         }
 
-
-        // fn evaluate_boundary_constraint_into_coeffs<F: PrimeField>(
-        //     b_constraint: &BoundaryConstraint<F>,
-        //     witness_poly: Polynomial<F, Coefficients>,
-        //     substituted_witness: &HashMap::<StepDifference<F>, Polynomial<F, Coefficients>>
-        // ) -> Result<Polynomial<F, Coefficients>, SynthesisError>
-        // {
-        //     let boundary_constraint_mask = StepDifference::Mask(F::one());
-        //     let mut result = substituted_witness.get(&boundary_constraint_mask).expect("is some").clone();
-        //     result.as_mut()[0].sub_assign(&b_constraint.value.expect("is some"));
-
-        //     Ok(result)
-        // }
-
         let boundary_lde_factor = self.max_constraint_power;
 
         // now evaluate normal constraints
@@ -598,65 +587,6 @@ impl<F: PrimeField> ALIInstance<F, PerRegisterARP> {
         Ok(g_poly)
     }
 }
-
-
-
-//         for b_constraint in self.boundary_constraints.iter() {
-//             current_coeff.mul_assign(&alpha);
-
-//             // x - a
-//             let column_generator = self.column_domain.generator;
-//             let trace_generator = self.full_trace_domain.generator;
-
-//             let mut q_poly = Polynomial::<F, Coefficients>::new_for_size(2)?;
-//             q_poly.as_mut()[1] = F::one();
-//             let mut root = column_generator.pow([b_constraint.at_step as u64]);
-//             let reg_num = match b_constraint.register {
-//                 Register::Register(reg_number) => {
-//                     reg_number
-//                 },
-//                 _ => {
-//                     unreachable!();
-//                 }
-//             };
-
-//             root.mul_assign(&trace_generator.pow([reg_num as u64]));
-//             // omega^(t*W + i)
-//             q_poly.as_mut()[0].sub_assign(&root);
-
-//             let mut subterm_coefficients = subterm_coefficients.clone();
-
-//             let evaluated_term = evaluate_boundary_constraint_into_coeffs(
-//                 &b_constraint, 
-//                 &self.mask_applied_polynomials
-//             )?;
-
-//             subterm_coefficients.add_assign(&worker, &evaluated_term);
-
-//             let mut inverse_q_poly_coset_values = q_poly.coset_evaluate_at_domain_for_degree_one(
-//                 &worker, 
-//                 subterm_coefficients.size() as u64
-//             )?;
-
-//             inverse_q_poly_coset_values.batch_inversion(&worker)?;
-//             inverse_q_poly_coset_values.scale(&worker, current_coeff);
-
-//             // now those are in a form alpha * Q^-1
-
-//             let mut subterm_values_in_coset = subterm_coefficients.coset_fft(&worker);
-
-//             subterm_values_in_coset.mul_assign(&worker, &inverse_q_poly_coset_values);
-
-//             let subterm_coefficients = subterm_values_in_coset.icoset_fft(&worker);
-
-//             g_poly.add_assign(&worker, &subterm_coefficients);
-//         }
-        
-//         self.g_poly = Some(g_poly);
-
-//         Ok(())
-//     }
-// }
 
 #[test]
 fn test_fib_conversion_into_ali() {

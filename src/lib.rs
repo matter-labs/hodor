@@ -16,13 +16,13 @@ extern crate blake2s_simd;
 
 pub mod air;
 pub mod arp;
-// pub mod fri;
+pub mod fri;
 pub mod utils;
 pub mod fft;
 pub mod domains;
 pub mod polynomials;
 pub mod ali;
-// pub mod iop;
+pub mod iop;
 pub mod transcript;
 pub mod precomputations;
 
