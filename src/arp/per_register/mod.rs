@@ -1,4 +1,3 @@
-use crate::air::*;
 use ff::PrimeField;
 
 use super::*;
@@ -8,32 +7,21 @@ use crate::polynomials::*;
 use crate::fft::multicore::Worker;
 use crate::fft::*;
 
-// ARP works with remapped registers and no longer cares about their meaning
-#[derive(Clone, Debug)]
-pub struct PerRegisterWitnessARPInstance<F:PrimeField> {
-    pub witness_polys: Option<Vec<Polynomial<F, Coefficients>>>,
-    pub num_rows: usize,
-    pub num_registers: usize,
-    pub constraints: Vec<Constraint<F>>,
-    pub boundary_constraints: Vec<BoundaryConstraint<F>>
-}
-
 fn make_witness_polymonials<F: PrimeField>(
     mut witness: Vec<Vec<F>>, 
     worker: &Worker
 ) -> Result<Vec<Polynomial<F, Coefficients>>, SynthesisError> {
+    let num_registers = witness.len();
     let num_rows = (&witness[0]).len();
     for w in witness.iter() {
         assert!(num_rows == w.len());
     }
-    let num_registers = witness.len();
-
-    let num_registers_sup = num_registers.next_power_of_two();
     let num_rows_sup = num_rows.next_power_of_two();
 
     let domain = Domain::<F>::new_for_size(num_rows_sup as u64)?;
     let log_n = domain.power_of_two;
     let omega = domain.generator;
+    let omega_inv = omega.inverse().expect("is some");
     let minv = F::from_str(&domain.size.to_string()).expect("exists").inverse().expect("exists");
 
     let mut result = vec![];
@@ -49,7 +37,7 @@ fn make_witness_polymonials<F: PrimeField>(
     worker.scope(0, |scope, _| {
         for w in witness.iter_mut() {
             scope.spawn(move |_| {
-                best_fft(&mut w[..], &worker, &omega, log_n as u32, num_cpus_hint);
+                best_fft(&mut w[..], &worker, &omega_inv, log_n as u32, num_cpus_hint);
             });
         }
     });
@@ -60,8 +48,8 @@ fn make_witness_polymonials<F: PrimeField>(
             for w in w.chunks_mut(chunk) {
                 scope.spawn(move |_| {
                     for w in w.iter_mut() {
-                            w.mul_assign(&minv);
-                        }
+                        w.mul_assign(&minv);
+                    }
                 });
             }
         });
@@ -73,35 +61,50 @@ fn make_witness_polymonials<F: PrimeField>(
     Ok(result)
 }
 
-impl<F: PrimeField> ARP<F> for PerRegisterWitnessARPInstance<F> {
-    fn from_instance(
-        instance: IntoARPInstance<F>, 
+impl<F: PrimeField> ARP<F> for ARPInstance<F, PerRegisterARP> {
+    fn calculate_witness_polys(
+        &self,
+        witness: Vec<Vec<F>>,
         worker: &Worker
-    ) -> Result<Self, SynthesisError> {
-        let num_rows = instance.num_rows;
-        let num_registers = instance.num_registers;
-
-        let mut witness_polys = None;
-        if let Some(w) = instance.witness {
-            witness_polys = Some(make_witness_polymonials(w, &worker)?);
+    ) -> Result<Vec<Polynomial<F, Coefficients>>, SynthesisError> {
+        let num_registers = witness.len();
+        let num_rows = (&witness[0]).len();
+        for w in witness.iter() {
+            assert!(num_rows == w.len());
         }
 
-        Ok(Self {
-            witness_polys: witness_polys,
-            num_rows: num_rows,
-            num_registers: num_registers,
-            constraints: instance.constraints,
-            boundary_constraints: instance.boundary_constraints
-        })
+        if num_registers != self.properties.num_registers {
+            return Err(SynthesisError::Error);
+        }
+
+        if num_rows != self.properties.num_rows {
+            return Err(SynthesisError::Error);
+        }
+
+        make_witness_polymonials(witness, worker)
+    }
+
+    fn from_instance(
+        instance: InstanceProperties<F>, 
+        _worker: &Worker
+    ) -> Result<Self, SynthesisError> {
+        let mut t = Self {
+            properties: instance,
+            _marker: std::marker::PhantomData
+        };
+
+        t.route()?;
+
+        Ok(t)
     }
 }
 
-impl<F: PrimeField> PerRegisterWitnessARPInstance<F> {
+impl<F: PrimeField> ARPInstance<F, PerRegisterARP> {
     /// - make interpolating polynomial f
     /// - add masking coefficients for constraints
     /// - keep boundary constraints as it is
     pub fn route(&mut self) -> Result<(), SynthesisError> {
-        let num_rows = self.num_rows as u64;
+        let num_rows = self.properties.num_rows as u64;
         let num_rows_sup = num_rows.next_power_of_two();
         let column_domain = Domain::<F>::new_for_size(num_rows_sup)?;
 
@@ -157,7 +160,7 @@ impl<F: PrimeField> PerRegisterWitnessARPInstance<F> {
             }
         }
 
-        for mut c in self.constraints.iter_mut() {
+        for mut c in self.properties.constraints.iter_mut() {
             remap_constraint(
                 &mut c, 
                 &column_domain
@@ -186,14 +189,20 @@ fn test_fib_conversion_into_per_register_arp() {
     let mut test_tracer = TestTraceSystem::<Fr>::new();
     fib.trace(&mut test_tracer).expect("should work");
     test_tracer.calculate_witness(1, 1, 3);
-    let into_arp = test_tracer.into_arp();
+    let (witness, props) = test_tracer.into_arp();
+    let witness = witness.expect("some witness");
+    println!("Witness = {:?}", witness);
     let worker = Worker::new();
-    let mut arp = PerRegisterWitnessARPInstance::<Fr>::from_instance(into_arp, &worker).expect("must work");
-    arp.route().expect("must work");
-    println!("Witness polys = {:?}", arp.witness_polys);
-
-    for c in arp.constraints.iter() {
+    let arp = ARPInstance::<Fr, PerRegisterARP>::from_instance(props, &worker).expect("must work");
+    for c in arp.properties.constraints.iter() {
         println!("{:?}", c);
+    }
+
+    let witness_polys = arp.calculate_witness_polys(witness.clone(), &worker).expect("must work");
+    println!("Witness polys = {:?}", witness_polys);
+    for (i, w) in witness_polys.into_iter().enumerate() {
+        let vals = w.fft(&worker);
+        assert!(witness[i] == vals.into_coeffs());
     }
 }
 

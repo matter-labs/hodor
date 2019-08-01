@@ -2,12 +2,11 @@ use crate::air::*;
 use crate::air::TestTraceSystem;
 use crate::polynomials::*;
 use crate::fft::multicore::Worker;
-use crate::transcript::Transcript;
 use crate::*;
 
 use ff::PrimeField;
 mod into_arp;
-mod single_witness;
+// mod single_witness;
 mod per_register;
 
 pub use into_arp::*;
@@ -27,26 +26,40 @@ pub enum PerRegisterARP { }
 impl ARPType for SingleWitnessARP {}
 impl ARPType for PerRegisterARP {}
 
+#[derive(Clone, Debug)]
+pub struct ARPInstance<F: PrimeField, T: ARPType> {
+    pub properties: InstanceProperties<F>,
+    _marker: std::marker::PhantomData<T>
+}
+
 pub trait ARP<F :PrimeField>: 
     Sized 
     + Clone 
     + std::fmt::Debug 
-    {
-        fn from_instance(
-            instance: IntoARPInstance<F>, 
-            worker: &Worker
-        ) -> Result<Self, SynthesisError>;
-    }
+{
+    fn from_instance(
+        instance: InstanceProperties<F>, 
+        worker: &Worker
+    ) -> Result<Self, SynthesisError>;
 
-
-#[derive(Debug, Clone)]
-pub enum WitnessPolynomial<F: PrimeField> {
-    Single(Polynomial<F, Coefficients>),
-    PerRegister(Vec<Polynomial<F, Coefficients>>),
+    fn calculate_witness_polys(
+        &self,
+        witness: Vec<Vec<F>>,
+        worker: &Worker
+    ) -> Result<Vec<Polynomial<F, Coefficients>>, SynthesisError>;
 }
 
+#[derive(Clone, Debug)]
+pub struct InstanceProperties<F: PrimeField> {
+    pub num_rows: usize,
+    pub num_registers: usize,
+    pub constraints: Vec<Constraint<F>>,
+    pub boundary_constraints: Vec<BoundaryConstraint<F>>
+}
+
+
 impl<F: PrimeField> IntoARP<F> for TestTraceSystem<F> {
-    fn into_arp(self) -> IntoARPInstance<F> {
+    fn into_arp(self) ->  (Option<Vec<Vec<F>>>, InstanceProperties<F>) {
         let num_pc_registers = self.pc_registers.len();
         let num_registers = self.registers.len();
         let num_aux_registers = self.aux_registers.len();
@@ -195,12 +208,13 @@ impl<F: PrimeField> IntoARP<F> for TestTraceSystem<F> {
             Some(witness)
         };
 
-        IntoARPInstance::<F> {
-            witness,
+        let properties = InstanceProperties::<F> {
             num_rows,
             num_registers,
             constraints,
             boundary_constraints,
-        }
+        };
+
+        (witness, properties)
     }
 }

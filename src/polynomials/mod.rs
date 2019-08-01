@@ -732,11 +732,27 @@ impl<F: PrimeField> Polynomial<F, Values> {
 
     pub fn pow(&mut self, worker: &Worker, exp: u64)
     {
+        if exp == 2 {
+            return self.square(&worker);
+        }
         worker.scope(self.coeffs.len(), |scope, chunk| {
             for v in self.coeffs.chunks_mut(chunk) {
                 scope.spawn(move |_| {
                     for v in v.iter_mut() {
                         *v = v.pow([exp]);
+                    }
+                });
+            }
+        });
+    }
+
+    pub fn square(&mut self, worker: &Worker)
+    {
+        worker.scope(self.coeffs.len(), |scope, chunk| {
+            for v in self.coeffs.chunks_mut(chunk) {
+                scope.spawn(move |_| {
+                    for v in v.iter_mut() {
+                        v.square();
                     }
                 });
             }
