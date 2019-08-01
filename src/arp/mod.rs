@@ -1,21 +1,43 @@
 use crate::air::*;
 use crate::air::TestTraceSystem;
 use crate::polynomials::*;
+use crate::fft::multicore::Worker;
+use crate::transcript::Transcript;
+use crate::*;
+
 use ff::PrimeField;
+mod into_arp;
+mod single_witness;
+mod per_register;
 
-mod prime_field_arp;
+pub use into_arp::*;
 
-pub use prime_field_arp::*;
+pub trait ARPType: 
+    Sized 
+    + Copy 
+    + Clone
+    {}
 
-// ARP works with remapped registers and no longer cares about their meaning
-pub struct ARP<F:PrimeField> {
-    pub witness: Option<Vec<Vec<F>>>,
-    pub witness_poly: Option<WitnessPolynomial<F>>,
-    pub num_steps: usize,
-    pub num_registers: usize,
-    pub constraints: Vec<Constraint<F>>,
-    pub boundary_constraints: Vec<BoundaryConstraint<F>>
-}
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub enum SingleWitnessARP { }
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub enum PerRegisterARP { }
+
+impl ARPType for SingleWitnessARP {}
+impl ARPType for PerRegisterARP {}
+
+pub trait ARP<F :PrimeField>: 
+    Sized 
+    + Clone 
+    + std::fmt::Debug 
+    {
+        fn from_instance(
+            instance: IntoARPInstance<F>, 
+            worker: &Worker
+        ) -> Result<Self, SynthesisError>;
+    }
+
 
 #[derive(Debug, Clone)]
 pub enum WitnessPolynomial<F: PrimeField> {
@@ -23,22 +45,15 @@ pub enum WitnessPolynomial<F: PrimeField> {
     PerRegister(Vec<Polynomial<F, Coefficients>>),
 }
 
-pub trait IntoARP<F: PrimeField> {
-    // return full trace, trace constraints and boundary constraints
-    // registers should be remapped to have uniform structure, so ARP knows nothing about
-    // what is a meaning of particular register
-    fn into_arp(self) -> ARP<F>;
-}
-
 impl<F: PrimeField> IntoARP<F> for TestTraceSystem<F> {
-    fn into_arp(self) -> ARP<F> {
+    fn into_arp(self) -> IntoARPInstance<F> {
         let num_pc_registers = self.pc_registers.len();
         let num_registers = self.registers.len();
         let num_aux_registers = self.aux_registers.len();
         let num_constant_registers = self.constant_registers.len();
 
         let total_registers = num_pc_registers + num_registers + num_aux_registers + num_constant_registers;
-        let num_steps = self.current_step;
+        let num_rows = self.current_step+1;
 
         let register_remap_constant = num_pc_registers;
         let aux_register_remap_constant = register_remap_constant + num_registers;
@@ -180,10 +195,9 @@ impl<F: PrimeField> IntoARP<F> for TestTraceSystem<F> {
             Some(witness)
         };
 
-        ARP::<F> {
+        IntoARPInstance::<F> {
             witness,
-            witness_poly: None,
-            num_steps,
+            num_rows,
             num_registers,
             constraints,
             boundary_constraints,

@@ -118,7 +118,7 @@ impl<F: PrimeField> TraceSystem<F> for TestTraceSystem<F> {
     {
         let constraint = BoundaryConstraint::<F> {
             register: register,
-            at_step: at_step,
+            at_row: at_step,
             value: value
         };
         self.boundary_constraints.push(constraint);
@@ -171,12 +171,8 @@ impl<F: PrimeField> IntoAIR<F> for Fibonacci<F> {
         };
 
         let mut fib_constraint_0 = Constraint::default();
-        fib_constraint_0.start_at = 0;
-        fib_constraint_0.density = ConstraintDensity::Dense;
 
         let mut fib_constraint_1 = Constraint::default();
-        fib_constraint_1.start_at = 0;
-        fib_constraint_1.density = ConstraintDensity::Dense;
 
         let a_register_now = UnivariateTerm::<F> {
             coeff: F::one(),

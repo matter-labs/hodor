@@ -12,20 +12,6 @@ pub mod deep_ali;
 pub use self::deep_ali::*;
 
 use std::collections::{HashMap, HashSet};
-use std::hash::{Hash, Hasher};
-
-impl<F: PrimeField> Hash for StepDifference<F> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        match &self {
-            StepDifference::Steps(s) => {
-                s.hash(state);
-            },
-            StepDifference::Mask(m) => {
-                m.into_raw_repr().as_ref().hash(state);
-            }
-        }
-    }
-}
 
 // ARP works with remapped registers and no longer cares about their meaning
 #[derive(Debug)]

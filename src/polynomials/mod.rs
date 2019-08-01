@@ -18,11 +18,11 @@ impl PolynomialForm for Values{}
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Polynomial<F: PrimeField, P: PolynomialForm> {
     coeffs: Vec<F>,
-    exp: u32,
+    pub exp: u32,
     pub omega: F,
     pub omegainv: F,
-    geninv: F,
-    minv: F,
+    pub geninv: F,
+    pub minv: F,
     _marker: std::marker::PhantomData<P>
 }
 
@@ -967,7 +967,7 @@ fn test_lde_correctness() {
     let rng = &mut XorShiftRng::from_seed([0x3dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
 
     use ff::Field;
-    use crate::experiments::vdf::Fr;
+    use crate::experiments::Fr;
     use crate::fft::multicore::Worker;
     use crate::polynomials::Polynomial;
     use std::time::Instant;
@@ -1015,7 +1015,7 @@ fn test_coset_lde_correctness() {
     let rng = &mut XorShiftRng::from_seed([0x3dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
 
     use ff::Field;
-    use crate::experiments::vdf::Fr;
+    use crate::experiments::Fr;
     use crate::fft::multicore::Worker;
     use crate::polynomials::Polynomial;
     use std::time::Instant;
@@ -1063,7 +1063,7 @@ fn test_various_ldes() {
     let rng = &mut XorShiftRng::from_seed([0x3dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
 
     use ff::Field;
-    use crate::experiments::vdf::Fr;
+    use crate::experiments::Fr;
     use crate::fft::multicore::Worker;
     use crate::polynomials::Polynomial;
     use std::time::Instant;

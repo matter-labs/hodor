@@ -7,10 +7,7 @@ use crate::arp::*;
 use crate::iop::*;
 use crate::iop::blake2s_trivial_iop::Blake2sIopTree;
 
-#[derive(PrimeField)]
-#[PrimeFieldModulus = "3618502788666131213697322783095070105623107215331596699973092056135872020481"]
-#[PrimeFieldGenerator = "7"]
-pub struct Fr(FrRepr);
+use super::Fr;
 
 pub struct VDF<F: PrimeField> {
     pub start_c0: F,
