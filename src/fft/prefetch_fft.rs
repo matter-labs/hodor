@@ -1,5 +1,6 @@
 use ff::PrimeField;
 use super::multicore::*;
+use super::prefetch::*;
 use crate::utils::*;
 
 pub(crate) fn best_fft<F: PrimeField>(a: &mut [F], worker: &Worker, omega: &F, log_n: u32, use_cpus_hint: Option<usize>)
@@ -44,11 +45,18 @@ pub(crate) fn serial_fft<F: PrimeField>(a: &mut [F], omega: &F, log_n: u32)
     for _ in 0..log_n {
         let w_m = omega.pow(&[(n / (2*m)) as u64]);
 
-        let mut k = 0;
-        while k < n {
+        let step_by = 2*m as usize;
+        for k in (0..n).step_by(step_by) {
+            {
+                prefetch_index::<F>(a, (k + m) as usize);
+                prefetch_index::<F>(a, k as usize);
+            }
             let mut w = F::one();
-            for j in 0..m {
-                
+            for j in 0..(m-1) {
+                {
+                    prefetch_index::<F>(a, (k+j+1+m) as usize);
+                    prefetch_index::<F>(a, (k+j+1) as usize);
+                }
                 let mut t = a[(k+j+m) as usize];
                 t.mul_assign(&w);
                 let mut tmp = a[(k+j) as usize];
@@ -56,9 +64,16 @@ pub(crate) fn serial_fft<F: PrimeField>(a: &mut [F], omega: &F, log_n: u32)
                 a[(k+j+m) as usize] = tmp;
                 a[(k+j) as usize].add_assign(&t);
                 w.mul_assign(&w_m);
-            }
+            } 
 
-            k += 2*m;
+            let j = m - 1;
+            let mut t = a[(k+j+m) as usize];
+            t.mul_assign(&w);
+            let mut tmp = a[(k+j) as usize];
+            tmp.sub_assign(&t);
+            a[(k+j+m) as usize] = tmp;
+            a[(k+j) as usize].add_assign(&t);
+            w.mul_assign(&w_m);
         }
         
         m *= 2;

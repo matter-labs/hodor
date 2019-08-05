@@ -1,6 +1,6 @@
 use ff::PrimeField;
 
-mod trivial_coset_combiner;
+pub mod trivial_coset_combiner;
 pub mod blake2s_trivial_iop;
 
 pub trait CosetCombiner<F: PrimeField> {
@@ -38,6 +38,10 @@ pub trait IopTree<F: PrimeField> {
 pub trait IOP<F: PrimeField> {
     type Combiner: CosetCombiner<F>;
     type Tree: IopTree<F>;
+
+    fn create(leafs: &[F]) -> Self;
+    fn get_root(&self) -> < <Self::Tree as IopTree<F> >::Hasher as IopTreeHasher<F>>::HashOutput;
+    fn get_challenge_scalar_from_root(&self) -> F;
 }
 
 fn log2_floor(num: usize) -> u32 {

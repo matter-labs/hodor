@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 extern crate ff;
 extern crate byteorder;
 extern crate rand;
@@ -21,6 +23,7 @@ pub mod domains;
 pub mod polynomials;
 pub mod ali;
 pub mod iop;
+pub mod transcript;
 
 mod experiments;
 

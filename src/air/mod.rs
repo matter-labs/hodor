@@ -17,6 +17,11 @@ pub enum Register {
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+pub struct DenseConstraint {
+    pub start_at: usize,
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum ConstraintDensity {
     Dense,
     Sparse(usize)

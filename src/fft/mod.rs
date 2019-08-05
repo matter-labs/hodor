@@ -1,17 +1,18 @@
 pub(crate) mod multicore;
 pub(crate) mod fft;
-pub mod radix2_domain;
+pub(crate) mod lde;
 
-pub(crate) mod recursive_fft;
-pub(crate) mod recursive_lde;
+// pub(crate) mod recursive_fft;
+// pub(crate) mod recursive_lde;
 
 use cfg_if;
 
 #[cfg(feature = "nightly")]
-pub(crate) mod prefetch_lde;
-
-#[cfg(not(feature = "nightly"))]
-pub(crate) mod lde;
+mod prefetch_lde;
+#[cfg(feature = "nightly")]
+mod prefetch_fft;
+#[cfg(feature = "nightly")]
+mod prefetch;
 
 use ff::PrimeField;
 use self::multicore::Worker;
@@ -22,13 +23,32 @@ cfg_if! {
         pub(crate) fn best_lde<F: PrimeField>(a: &mut [F], worker: &Worker, omega: &F, log_n: u32, lde_factor: usize) {
             self::prefetch_lde::best_lde(a, worker, omega, log_n, lde_factor)
         }
+
+        #[inline(always)]
+        pub(crate) fn best_fft<F: PrimeField>(a: &mut [F], worker: &Worker, omega: &F, log_n: u32, use_cpus_hint: Option<usize>) {
+            self::prefetch_fft::best_fft(a, worker, omega, log_n, use_cpus_hint)
+        }
+
+        #[inline(always)]
+        pub(crate) fn serial_fft<F: PrimeField>(a: &mut [F], omega: &F, log_n: u32) {
+            self::prefetch_fft::serial_fft(a, omega, log_n)
+        }
     } else {
         #[inline(always)]
         pub(crate) fn best_lde<F: PrimeField>(a: &mut [F], worker: &Worker, omega: &F, log_n: u32, lde_factor: usize) {
             self::lde::best_lde(a, worker, omega, log_n, lde_factor)
         }
+        #[inline(always)]
+        pub(crate) fn best_fft<F: PrimeField>(a: &mut [F], worker: &Worker, omega: &F, log_n: u32, use_cpus_hint: Option<usize>) {
+            self::fft::best_fft(a, worker, omega, log_n, use_cpus_hint)
+        }
+        #[inline(always)]
+        pub(crate) fn serial_fft<F: PrimeField>(a: &mut [F], omega: &F, log_n: u32) {
+            self::fft::serial_fft(a, omega, log_n)
+        }
     }  
 }
+
 
 pub(crate) mod dit_fft;
 pub(crate) mod radix4_fft;
@@ -82,6 +102,22 @@ fn test_sequential_FFT()
     assert_eq!(matching_dit, N);
     
 }
+
+pub fn distribute_powers<F: PrimeField>(coeffs: &mut [F], worker: &Worker, g: F)
+{
+    worker.scope(coeffs.len(), |scope, chunk| {
+        for (i, v) in coeffs.chunks_mut(chunk).enumerate() {
+            scope.spawn(move |_| {
+                let mut u = g.pow(&[(i * chunk) as u64]);
+                for v in v.iter_mut() {
+                    v.mul_assign(&u);
+                    u.mul_assign(&g);
+                }
+            });
+        }
+    });
+}
+
 
 
 #[test]

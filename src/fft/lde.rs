@@ -192,165 +192,166 @@ pub(crate) fn parallel_lde<F: PrimeField>(
     });
 }
 
-#[test]
-fn test_small_lde() {
-    use rand::{XorShiftRng, SeedableRng, Rand};
-    const LOG_N: usize = 2;
-    const BASE: usize = 1 << LOG_N;
-    const LOG_LDE: usize = 6;
-    const LDE_FACTOR: usize = 1 << LOG_LDE;
-    let rng = &mut XorShiftRng::from_seed([0x3dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
+// #[test]
+// fn test_small_lde() {
+//     use rand::{XorShiftRng, SeedableRng, Rand};
+//     const LOG_N: usize = 2;
+//     const BASE: usize = 1 << LOG_N;
+//     const LOG_LDE: usize = 6;
+//     const LDE_FACTOR: usize = 1 << LOG_LDE;
+//     let rng = &mut XorShiftRng::from_seed([0x3dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
 
-    use ff::Field;
-    use crate::experiments::vdf::Fr;
-    use crate::domains::Domain;
-    use crate::fft::multicore::Worker;
-    use std::time::Instant;
+//     use ff::Field;
+//     use crate::experiments::vdf::Fr;
+//     use crate::domains::Domain;
+//     use crate::fft::multicore::Worker;
+//     use std::time::Instant;
 
-    let worker = Worker::new();
+//     let worker = Worker::new();
 
-    let mut coeffs = (0..BASE).map(|_| Fr::rand(rng)).collect::<Vec<_>>();
+//     let mut coeffs = (0..BASE).map(|_| Fr::rand(rng)).collect::<Vec<_>>();
 
-    coeffs.resize(BASE * LDE_FACTOR, Fr::zero());
+//     coeffs.resize(BASE * LDE_FACTOR, Fr::zero());
 
-    let domain = Domain::<Fr>::new_for_size(coeffs.len() as u64).unwrap();
-    let omega = domain.generator;
-    let log_n = (LOG_N + LOG_LDE) as u32;
+//     let domain = Domain::<Fr>::new_for_size(coeffs.len() as u64).unwrap();
+//     let omega = domain.generator;
+//     let log_n = (LOG_N + LOG_LDE) as u32;
 
-    let mut reference = coeffs.clone();
+//     let mut reference = coeffs.clone();
 
-    let mut lde = coeffs;
+//     let mut lde = coeffs;
 
-    let now = Instant::now();
-    crate::fft::fft::best_fft(&mut reference[..], &worker, &omega, log_n);
-    println!("naive LDE taken {}ms", now.elapsed().as_millis());
+//     let now = Instant::now();
+//     crate::fft::best_fft(&mut reference[..], &worker, &omega, log_n);
+//     println!("naive LDE taken {}ms", now.elapsed().as_millis());
 
-    // let now = Instant::now();
-    // crate::fft::fft::serial_fft(&mut reference[..], &omega, log_n);
-    // println!("naive LDE taken {}ms", now.elapsed().as_millis());
+//     // let now = Instant::now();
+//     // crate::fft::fft::serial_fft(&mut reference[..], &omega, log_n);
+//     // println!("naive LDE taken {}ms", now.elapsed().as_millis());
 
-    let now = Instant::now();
-    self::best_lde(&mut lde, &worker, &omega, log_n, LDE_FACTOR);
-    println!("LDE taken {}ms", now.elapsed().as_millis());
+//     let now = Instant::now();
+//     self::best_lde(&mut lde, &worker, &omega, log_n, LDE_FACTOR);
+//     println!("LDE taken {}ms", now.elapsed().as_millis());
 
-    // let now = Instant::now();
-    // self::serial_lde(&mut lde, &omega, log_n, BASE);
-    // println!("LDE taken {}ms", now.elapsed().as_millis());
+//     // let now = Instant::now();
+//     // self::serial_lde(&mut lde, &omega, log_n, BASE);
+//     // println!("LDE taken {}ms", now.elapsed().as_millis());
 
-    assert!(reference == lde);
-}
+//     assert!(reference == lde);
+// }
 
-#[test]
-fn test_small_serial_lde() {
-    use rand::{XorShiftRng, SeedableRng, Rand};
-    const LOG_N: usize = 2;
-    const BASE: usize = 1 << LOG_N;
-    const LOG_LDE: usize = 6;
-    const LDE_FACTOR: usize = 1 << LOG_LDE;
-    let rng = &mut XorShiftRng::from_seed([0x3dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
+// #[test]
+// fn test_small_serial_lde() {
+//     use rand::{XorShiftRng, SeedableRng, Rand};
+//     const LOG_N: usize = 2;
+//     const BASE: usize = 1 << LOG_N;
+//     const LOG_LDE: usize = 6;
+//     const LDE_FACTOR: usize = 1 << LOG_LDE;
+//     let rng = &mut XorShiftRng::from_seed([0x3dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
 
-    use ff::Field;
-    use crate::experiments::vdf::Fr;
-    use crate::domains::Domain;
-    use std::time::Instant;
+//     use ff::Field;
+//     use crate::experiments::vdf::Fr;
+//     use crate::domains::Domain;
+//     use std::time::Instant;
 
-    let mut coeffs = (0..BASE).map(|_| Fr::rand(rng)).collect::<Vec<_>>();
+//     let mut coeffs = (0..BASE).map(|_| Fr::rand(rng)).collect::<Vec<_>>();
 
-    coeffs.resize(BASE * LDE_FACTOR, Fr::zero());
+//     coeffs.resize(BASE * LDE_FACTOR, Fr::zero());
 
-    let domain = Domain::<Fr>::new_for_size(coeffs.len() as u64).unwrap();
-    let omega = domain.generator;
-    let log_n = (LOG_N + LOG_LDE) as u32;
+//     let domain = Domain::<Fr>::new_for_size(coeffs.len() as u64).unwrap();
+//     let omega = domain.generator;
+//     let log_n = (LOG_N + LOG_LDE) as u32;
 
-    let mut reference = coeffs.clone();
+//     let mut reference = coeffs.clone();
 
-    let mut lde = coeffs;
+//     let mut lde = coeffs;
 
-    let now = Instant::now();
-    crate::fft::fft::serial_fft(&mut reference[..], &omega, log_n);
-    println!("naive LDE taken {}ms", now.elapsed().as_millis());
+//     let now = Instant::now();
+//     crate::fft::fft::serial_fft(&mut reference[..], &omega, log_n);
+//     println!("naive LDE taken {}ms", now.elapsed().as_millis());
 
-    let now = Instant::now();
-    self::serial_lde(&mut lde, &omega, log_n, LDE_FACTOR);
-    println!("LDE taken {}ms", now.elapsed().as_millis());
+//     let now = Instant::now();
+//     self::serial_lde(&mut lde, &omega, log_n, LDE_FACTOR);
+//     println!("LDE taken {}ms", now.elapsed().as_millis());
 
-    assert!(reference == lde);
-}
+//     assert!(reference == lde);
+// }
 
-#[test]
-fn test_large_serial_lde() {
-    use rand::{XorShiftRng, SeedableRng, Rand};
-    const LOG_N: usize = 20;
-    const BASE: usize = 1 << LOG_N;
-    const LOG_LDE: usize = 7;
-    const LDE_FACTOR: usize = 1 << LOG_LDE;
-    let rng = &mut XorShiftRng::from_seed([0x3dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
+// #[test]
+// fn test_large_serial_lde() {
+//     use rand::{XorShiftRng, SeedableRng, Rand};
+//     const LOG_N: usize = 20;
+//     const BASE: usize = 1 << LOG_N;
+//     const LOG_LDE: usize = 7;
+//     const LDE_FACTOR: usize = 1 << LOG_LDE;
+//     let rng = &mut XorShiftRng::from_seed([0x3dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
 
-    use ff::Field;
-    use crate::experiments::vdf::Fr;
-    use crate::domains::Domain;
-    use std::time::Instant;
+//     use ff::Field;
+//     use crate::experiments::vdf::Fr;
+//     use crate::domains::Domain;
+//     use std::time::Instant;
 
-    let mut coeffs = (0..BASE).map(|_| Fr::rand(rng)).collect::<Vec<_>>();
+//     let mut coeffs = (0..BASE).map(|_| Fr::rand(rng)).collect::<Vec<_>>();
 
-    coeffs.resize(BASE * LDE_FACTOR, Fr::zero());
+//     coeffs.resize(BASE * LDE_FACTOR, Fr::zero());
 
-    let domain = Domain::<Fr>::new_for_size(coeffs.len() as u64).unwrap();
-    let omega = domain.generator;
-    let log_n = (LOG_N + LOG_LDE) as u32;
+//     let domain = Domain::<Fr>::new_for_size(coeffs.len() as u64).unwrap();
+//     let omega = domain.generator;
+//     let log_n = (LOG_N + LOG_LDE) as u32;
 
-    let mut reference = coeffs.clone();
+//     let mut reference = coeffs.clone();
 
-    let mut lde = coeffs;
+//     let mut lde = coeffs;
 
-    let now = Instant::now();
-    crate::fft::fft::serial_fft(&mut reference[..], &omega, log_n);
-    println!("naive LDE taken {}ms", now.elapsed().as_millis());
+//     let now = Instant::now();
+//     crate::fft::fft::serial_fft(&mut reference[..], &omega, log_n);
+//     println!("naive LDE taken {}ms", now.elapsed().as_millis());
 
-    let now = Instant::now();
-    self::serial_lde(&mut lde, &omega, log_n, LDE_FACTOR);
-    println!("LDE taken {}ms", now.elapsed().as_millis());
+//     let now = Instant::now();
+//     self::serial_lde(&mut lde, &omega, log_n, LDE_FACTOR);
+//     println!("LDE taken {}ms", now.elapsed().as_millis());
 
-    assert!(reference == lde);
-}
+//     assert!(reference == lde);
+// }
 
-#[test]
-fn test_large_lde() {
-    use rand::{XorShiftRng, SeedableRng, Rand};
-    const LOG_N: usize = 22;
-    const BASE: usize = 1 << LOG_N;
-    const LOG_LDE: usize = 7;
-    const LDE_FACTOR: usize = 1 << LOG_LDE;
-    let rng = &mut XorShiftRng::from_seed([0x3dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
+// #[test]
+// fn test_large_lde() {
+//     use rand::{XorShiftRng, SeedableRng, Rand};
+//     const LOG_N: usize = 22;
+//     const BASE: usize = 1 << LOG_N;
+//     const LOG_LDE: usize = 7;
+//     const LDE_FACTOR: usize = 1 << LOG_LDE;
+//     let rng = &mut XorShiftRng::from_seed([0x3dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
 
-    use ff::Field;
-    use crate::experiments::vdf::Fr;
-    use crate::domains::Domain;
-    use crate::fft::multicore::Worker;
-    use crate::polynomials::Polynomial;
-    use std::time::Instant;
+//     use ff::Field;
+//     use crate::experiments::vdf::Fr;
+//     use crate::domains::Domain;
+//     use crate::fft::multicore::Worker;
+//     use crate::polynomials::Polynomial;
+//     use std::time::Instant;
 
-    let worker = Worker::new();
+//     let worker = Worker::new();
 
-    let mut coeffs = (0..BASE).map(|_| Fr::rand(rng)).collect::<Vec<_>>();
+//     let mut coeffs = (0..BASE).map(|_| Fr::rand(rng)).collect::<Vec<_>>();
 
-    let mut poly = Polynomial::from_coeffs(coeffs.clone()).unwrap();
+//     let mut poly = Polynomial::from_coeffs(coeffs.clone()).unwrap();
 
-    poly.pad_by_factor(LDE_FACTOR).unwrap();
-    let now = Instant::now();
-    let naive_lde = poly.fft(&worker);
-    println!("naive LDE taken {}ms", now.elapsed().as_millis());
+//     poly.pad_by_factor(LDE_FACTOR).unwrap();
+//     let now = Instant::now();
+//     let naive_lde = poly.fft(&worker);
+//     println!("naive LDE taken {}ms", now.elapsed().as_millis());
 
-    coeffs.resize(BASE * LDE_FACTOR, Fr::zero());
+//     coeffs.resize(BASE * LDE_FACTOR, Fr::zero());
 
-    let domain = Domain::<Fr>::new_for_size(coeffs.len() as u64).unwrap();
-    let omega = domain.generator;
-    let log_n = (LOG_N + LOG_LDE) as u32;
+//     let domain = Domain::<Fr>::new_for_size(coeffs.len() as u64).unwrap();
+//     let omega = domain.generator;
+//     let log_n = (LOG_N + LOG_LDE) as u32;
 
-    let now = Instant::now();
-    let mut lde = coeffs.clone();
-    best_lde(&mut lde, &worker, &omega, log_n, LDE_FACTOR);
-    println!("LDE taken {}ms", now.elapsed().as_millis());
+//     let now = Instant::now();
+//     let mut lde = coeffs.clone();
+//     best_lde(&mut lde, &worker, &omega, log_n, LDE_FACTOR);
+//     println!("LDE taken {}ms", now.elapsed().as_millis());
 
-    assert!(naive_lde.into_coeffs() == lde);
-}
+//     assert!(naive_lde.into_coeffs() == lde);
+// }
+

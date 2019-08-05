@@ -1,7 +1,8 @@
 use ff::{PrimeField, PrimeFieldRepr};
-use blake2s_simd::{blake2s, Params, State};
+use blake2s_simd::{Params, State};
 use crate::fft::multicore::Worker;
 use super::*;
+use super::trivial_coset_combiner::*;
 
 lazy_static! {
     static ref BASE_BLAKE2S_PARAMS: State = {
@@ -46,7 +47,7 @@ impl<F: PrimeField> HashEncoder<F> for Blake2sLeafEncoder<F>{
     fn interpret_hash(value: &Self::Input) -> F {
         let value = *value;
         let mut repr = F::Repr::default();
-        let shaving_mask: u64 = 0xffffffffffffffff >> Self::SHAVE_BITS;
+        let shaving_mask: u64 = 0xffffffffffffffff >> (Self::SHAVE_BITS % 64);
         repr.read_be(&value[..]).expect("will read");
         // repr.read_le(&value[..]).expect("will read");
         let last_limb_idx = repr.as_ref().len() - 1;
@@ -211,6 +212,33 @@ impl<F: PrimeField> IopTree<F> for Blake2sIopTree<F> {
 
         < <Self::Hasher as IopTreeHasher<F> >::LeafEncoder as HashEncoder<F> >::interpret_hash(&root)
     }
+}
+
+pub struct TrivialBlake2sIOP<F: PrimeField> {
+    tree: Blake2sIopTree<F>,
+}
+
+
+impl<F: PrimeField> IOP<F> for TrivialBlake2sIOP<F> {
+    type Combiner = TrivialCombiner;
+    type Tree = Blake2sIopTree<F>;
+
+    fn create(leafs: &[F]) -> Self {
+        let tree = Self::Tree::create(leafs);
+
+        Self {
+            tree
+        }
+    }
+
+    fn get_root(&self) -> < <Self::Tree as IopTree<F> >::Hasher as IopTreeHasher<F>>::HashOutput {
+        self.tree.get_root()
+    }
+
+    fn get_challenge_scalar_from_root(&self) -> F {
+        self.tree.get_challenge_scalar_from_root()
+    }
+
 }
 
 #[test]
