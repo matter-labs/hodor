@@ -88,7 +88,7 @@ fn test_sequential_FFT()
 fn test_parallel_FFT()
 {
     use rand::{XorShiftRng, SeedableRng, Rand};
-    const LOG_N: u32 = 20;
+    const LOG_N: u32 = 10;
     const N: usize = 1 << LOG_N;
     let rng = &mut XorShiftRng::from_seed([0x3dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
     use ff::Field;
@@ -139,6 +139,52 @@ fn test_parallel_FFT()
     assert_eq!(matching_dit, N);
     
 }
+
+
+#[test]
+fn test_FFT_Prunning()
+{
+    use rand::{XorShiftRng, SeedableRng, Rand};
+    const LOG_NONZERO_N: u32 = 18;
+    const LOG_N: u32 = LOG_NONZERO_N + 4;
+    const N: usize = 1 << LOG_N;
+    let rng = &mut XorShiftRng::from_seed([0x3dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
+    use ff::Field;
+    use crate::experiments::vdf::Fr;
+    use std::time::Instant;
+    use crate::domains::Domain;
+    use crate::fft::multicore::Worker;
+
+    let worker = Worker::new();
+
+    let mut a = (0..N).map(|i| if i < (1<<LOG_NONZERO_N) {Fr::rand(rng)} else {Fr::zero()}).collect::<Vec<_>>();
+    let mut b = a.clone();
+
+    let domain = Domain::<Fr>::new_for_size(a.len() as u64).unwrap();
+    let omega = domain.generator;
+
+    let mut start = Instant::now();
+    //fft::parallel_fft::<Fr>(&mut a, &worker, &omega, LOG_N, worker.log_num_cpus());
+    dit_fft::parallel_DIT_fft::<Fr>(&mut a, &worker, &omega, LOG_N, worker.log_num_cpus(), N);
+    let mut end = Instant::now();
+    let usual_time = end - start;
+
+    start = Instant::now();
+    dit_fft::parallel_DIT_fft::<Fr>(&mut b, &worker, &omega, LOG_N, worker.log_num_cpus(), 1<<LOG_NONZERO_N);
+    end = Instant::now();
+    let pruning_time = end - start;
+
+    println!("usual time: {}", usual_time.subsec_millis());
+    println!("pruning time: {}", pruning_time.subsec_millis());
+    
+    let matching = a.iter().zip(b.iter()).filter(|(a, b)| *a == *b).count();
+
+    // println!("{:?}", a);
+    // println!("{:?}", b);
+    
+    assert_eq!(matching, N); 
+}
+
 
 // #[cfg(feature = "nightly")]
 // extern crate prefetch;
