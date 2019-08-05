@@ -38,7 +38,7 @@ pub(crate) mod radix4_fft;
 fn test_sequential_FFT()
 {
     use rand::{XorShiftRng, SeedableRng, Rand};
-    const LOG_N: u32 = 8;
+    const LOG_N: u32 = 10;
     const N: usize = 1 << LOG_N;
     let rng = &mut XorShiftRng::from_seed([0x3dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
     use ff::Field;
@@ -88,7 +88,7 @@ fn test_sequential_FFT()
 fn test_parallel_FFT()
 {
     use rand::{XorShiftRng, SeedableRng, Rand};
-    const LOG_N: u32 = 4;
+    const LOG_N: u32 = 20;
     const N: usize = 1 << LOG_N;
     let rng = &mut XorShiftRng::from_seed([0x3dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
     use ff::Field;
@@ -100,13 +100,9 @@ fn test_parallel_FFT()
     //create two different workers: general and special worker for radix4 FFT
     let general_worker = Worker::new();
     let log_cpus = general_worker.log_num_cpus();
-    println!("Number of workers: {}", 1 << log_cpus);  
-    let z = if log_cpus % 2 == 0 {log_cpus} else {log_cpus - 1};
-    let radix4_worker = Worker::new_with_cpus(1 << z);
-    println!("Number of workers: {}", 1 << radix4_worker.log_num_cpus()); 
-    println!("z {}", 1 << z);   
-    
-    //let mut a = vec![Fr::zero(); N];
+    let radix4_log_cpus = if log_cpus % 2 == 0 {log_cpus} else {log_cpus - 1};
+    let radix4_worker = Worker::new_with_cpus(1 << radix4_log_cpus);
+
     let mut a = (0..N).map(|_| Fr::rand(rng)).collect::<Vec<_>>();
     let mut b = a.clone();
     let mut c = a.clone();
@@ -115,13 +111,12 @@ fn test_parallel_FFT()
     let omega = domain.generator;
 
     let mut start = Instant::now();
-    fft::parallel_fft::<Fr>(&mut a, &radix4_worker, &omega, LOG_N, radix4_worker.log_num_cpus());
+    fft::parallel_fft::<Fr>(&mut a, &general_worker, &omega, LOG_N, log_cpus);
     let mut end = Instant::now();
     let radix_2_time = end - start;
 
     let mut start = Instant::now();
-    //radix4_fft::parallel_fft_radix_4::<Fr>(&mut b, &radix4_worker, &omega, LOG_N, z);
-    fft::parallel_fft::<Fr>(&mut b, &general_worker, &omega, LOG_N, general_worker.log_num_cpus());
+    radix4_fft::parallel_fft_radix_4::<Fr>(&mut b, &radix4_worker, &omega, LOG_N, radix4_log_cpus);
     let mut end = Instant::now();
     let radix_4_time = end - start;
 
@@ -137,11 +132,11 @@ fn test_parallel_FFT()
     let matching_radix4 = a.iter().zip(b.iter()).filter(|(a, b)| *a == *b).count();
     let matching_dit = a.iter().zip(c.iter()).filter(|(x, y)| *x == *y).count();
 
-    println!("{:?}", a);
-    println!("{:?}", b);
+    // println!("{:?}", a);
+    // println!("{:?}", b);
     
     assert_eq!(matching_radix4, N);
-    //assert_eq!(matching_dit, N);
+    assert_eq!(matching_dit, N);
     
 }
 
