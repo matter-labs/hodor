@@ -115,3 +115,53 @@ pub fn distribute_powers<F: PrimeField>(coeffs: &mut [F], worker: &Worker, g: F)
 
 //     assert!(naive_lde.into_coeffs() == lde);
 // }
+
+#[test]
+fn test_worker_size() {
+    use rand::{XorShiftRng, SeedableRng, Rand};
+    // const LOG_N: usize = 8;
+    const LOG_N: usize = 5;
+    const BASE: usize = 1 << LOG_N;
+    let rng = &mut XorShiftRng::from_seed([0x3dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
+    
+    use ff::Field;
+    use crate::experiments::Fr;
+    // use crate::bn256::Fr;
+    // use crate::Fr;
+    use crate::domains::Domain;
+    use crate::fft::multicore::Worker;
+    use super::*;
+
+    let worker = Worker::new();
+    let worker16 = Worker::new_with_cpus(16);
+
+    let domain = Domain::<Fr>::new_for_size(BASE as u64).unwrap();
+
+    let mut coeffs: Vec<Fr> = (0..BASE).map(|_| Fr::rand(rng)).collect::<Vec<_>>();
+    let coeffs_ref = coeffs.clone();
+    let mut coeffs16 = coeffs.clone();
+    let mut coeffs_serial = coeffs.clone();
+
+    let omega = domain.generator;
+
+    let may_be_one = omega.pow([BASE as u64]);
+    let one = Fr::one();
+    assert!(may_be_one == one);
+
+
+    best_fft(&mut coeffs, &worker, &omega, LOG_N as u32, None);
+    // crate::fft::fft::parallel_fft(&mut coeffs, &worker, &omega, LOG_N as u32, 3);
+    best_fft(&mut coeffs16, &worker16, &omega, LOG_N as u32, None);
+    // crate::fft::fft::parallel_fft(&mut coeffs16, &worker16, &omega, LOG_N as u32, 4);
+    serial_fft(&mut coeffs_serial, &omega, LOG_N as u32);
+    let omega_inv = omega.inverse().unwrap();
+    let minv = Fr::from_str(&BASE.to_string()).unwrap().inverse().unwrap();
+    assert!(coeffs_serial == coeffs16, "power of two worker should match serial");
+    assert!(coeffs == coeffs_serial, "non power of two worker should match serial");
+    serial_fft(&mut coeffs_serial, &omega_inv, LOG_N as u32);
+    for w in coeffs_serial.iter_mut() {
+        w.mul_assign(&minv);
+    }
+    assert!(coeffs_serial == coeffs_ref);
+
+}

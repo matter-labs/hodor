@@ -93,6 +93,7 @@ pub(crate) fn parallel_fft<F: PrimeField>(
                     for s in 0..num_cpus {
                         let idx = (i + (s << log_new_n)) % (1 << log_n);
                         let mut t = a[idx];
+
                         t.mul_assign(&elt);
                         tmp[i].add_assign(&t);
                         elt.mul_assign(&omega_step);
