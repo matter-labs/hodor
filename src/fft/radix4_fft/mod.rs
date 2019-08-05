@@ -47,6 +47,7 @@ pub(crate) fn serial_fft_radix_4<F: PrimeField>(a: &mut [F], omega: &F, log_n: u
     let n = a.len() as u64;
     assert_eq!(n, 1 << log_n);
 
+    assert!(log_n % 2 == 0);
     let num_digits = (log_n / 2) as u64;
 
     for k in 0..n {
@@ -153,7 +154,7 @@ pub(crate) fn parallel_fft_radix_4<F: PrimeField>(
                 let mut elt = F::one();
                 for i in 0..(1 << log_new_n) {
                     for s in 0..num_cpus {
-                        let idx = (i + (s << log_new_n)) % (1 << log_n);
+                        let idx = (i + (s << log_new_n));
                         let mut t = a[idx];
                         t.mul_assign(&elt);
                         tmp[i].add_assign(&t);
