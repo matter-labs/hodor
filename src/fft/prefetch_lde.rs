@@ -429,5 +429,7 @@ pub(crate) fn parallel_lde<F: PrimeField>(
 //     best_lde(&mut lde, &worker, &omega, log_n, LDE_FACTOR);
 //     println!("LDE taken {}ms", now.elapsed().as_millis());
 
+
 //     assert!(naive_lde.into_coeffs() == lde);
 // }
+
