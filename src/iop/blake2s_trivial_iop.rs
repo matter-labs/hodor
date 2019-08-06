@@ -245,7 +245,7 @@ impl<F: PrimeField> IOP<F> for TrivialBlake2sIOP<F> {
 fn make_small_tree() {
     use ff::Field;
     use hex::encode;
-    use crate::experiments::vdf::Fr;
+    use crate::experiments::Fr;
     let inputs = vec![Fr::one(); 16];
 
     let tree = Blake2sIopTree::create(&inputs);
