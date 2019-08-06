@@ -76,7 +76,7 @@ pub(crate) fn serial_fft_radix_4<F: PrimeField>(a: &mut [F], omega: &F, log_n: u
 
                 let mut u = w;
 
-                let mut x0 = a[(k+j) as usize];
+                let x0 = a[(k+j) as usize];
 
                 let mut x1 = a[(k+j+m) as usize];
                 x1.mul_assign(&w);
@@ -89,29 +89,28 @@ pub(crate) fn serial_fft_radix_4<F: PrimeField>(a: &mut [F], omega: &F, log_n: u
                 u.mul_assign(&w);
                 x3.mul_assign(&u);
 
-                let mut temp1 = x0;
-                temp1.add_assign(&x2);
+                let mut x0_plus_x2 = x0;
+                x0_plus_x2.add_assign(&x2);
 
-                let mut temp2 = x1;
-                temp2.add_assign(&x3);
+                let mut x1_plus_x3 = x1;
+                x1_plus_x3.add_assign(&x3);
 
-                a[(k+j) as usize] = temp1;
-                a[(k+j) as usize].add_assign(&temp2);
-                a[(k+j+2*m) as usize] = temp1;
-                a[(k+j+2*m) as usize].sub_assign(&temp2);
+                a[(k+j) as usize] = x0_plus_x2;
+                a[(k+j) as usize].add_assign(&x1_plus_x3);
+                a[(k+j+2*m) as usize] = x0_plus_x2;
+                a[(k+j+2*m) as usize].sub_assign(&x1_plus_x3);
 
-                x1.mul_assign(&v);
-                x3.mul_assign(&v);
+                let mut x0_minus_x2 = x0;
+                x0_minus_x2.sub_assign(&x2);
 
-                temp1 = x0;
-                temp1.sub_assign(&x2);
-                temp2 = x1;
-                temp2.sub_assign(&x3);
+                let mut x1_minus_x3_by_w4 = x1;
+                x1_minus_x3_by_w4.sub_assign(&x3);
+                x1_minus_x3_by_w4.mul_assign(&v);
 
-                a[(k+j+m) as usize] = temp1;
-                a[(k+j+m) as usize].add_assign(&temp2);
-                a[(k+j+3*m) as usize] = temp1;
-                a[(k+j+3*m) as usize].sub_assign(&temp2);
+                a[(k+j+m) as usize] = x0_minus_x2;
+                a[(k+j+m) as usize].add_assign(&x1_minus_x3_by_w4);
+                a[(k+j+3*m) as usize] = x0_minus_x2;
+                a[(k+j+3*m) as usize].sub_assign(&x1_minus_x3_by_w4);
 
                 w.mul_assign(&w_m);
             }
@@ -138,7 +137,7 @@ pub(crate) fn parallel_fft_radix_4<F: PrimeField>(
     assert!(log_cpus % 2 == 0);
     
     let num_cpus = 1 << log_cpus;
-    let log_new_n = (log_n - log_cpus);
+    let log_new_n = log_n - log_cpus;
     let mut tmp = vec![vec![F::zero(); 1 << log_new_n]; num_cpus];
     let new_omega = omega.pow(&[num_cpus as u64]);
 

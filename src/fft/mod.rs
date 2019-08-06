@@ -55,14 +55,14 @@ pub(crate) mod radix4_fft;
 
 
 #[test]
-fn test_sequential_FFT()
+fn test_sequential_radix4_fft()
 {
     use rand::{XorShiftRng, SeedableRng, Rand};
-    const LOG_N: u32 = 10;
+    const LOG_N: u32 = 20;
     const N: usize = 1 << LOG_N;
     let rng = &mut XorShiftRng::from_seed([0x3dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
     use ff::Field;
-    use crate::experiments::vdf::Fr;
+    use crate::experiments::Fr;
     use std::time::Instant;
     use crate::domains::Domain;
 
@@ -73,28 +73,24 @@ fn test_sequential_FFT()
     let domain = Domain::<Fr>::new_for_size(a.len() as u64).unwrap();
     let omega = domain.generator;
 
-    let mut start = Instant::now();
+    let start = Instant::now();
     fft::serial_fft::<Fr>(&mut a, &omega, LOG_N);
-    let mut end = Instant::now();
+    let end = Instant::now();
     let radix_2_time = end - start;
 
-    let mut start = Instant::now();
+    let start = Instant::now();
     radix4_fft::serial_fft_radix_4::<Fr>(&mut b, &omega, LOG_N);
-    let mut end = Instant::now();
+    let end = Instant::now();
     let radix_4_time = end - start;
 
-    start = Instant::now();
+    let start = Instant::now();
     dit_fft::serial_DIT_fft::<Fr>(&mut c, &omega, LOG_N, N);
-    end = Instant::now();
+    let end = Instant::now();
     let dit_fft_time = end - start;
 
     println!("Radix2 time: {}", radix_2_time.subsec_millis());
     println!("Radix4 time: {}", radix_4_time.subsec_millis());
     println!("dit time: {}", dit_fft_time.subsec_millis());
-    
-
-    // println!("{:?}", a);
-    // println!("{:?}", b);
 
     let matching_radix4 = a.iter().zip(b.iter()).filter(|(a, b)| *a == *b).count();
     let matching_dit = a.iter().zip(c.iter()).filter(|(a, c)| *a == *c).count();
@@ -121,14 +117,15 @@ pub fn distribute_powers<F: PrimeField>(coeffs: &mut [F], worker: &Worker, g: F)
 
 
 #[test]
-fn test_parallel_FFT()
+fn test_parallel_radix4_fft()
 {
     use rand::{XorShiftRng, SeedableRng, Rand};
-    const LOG_N: u32 = 10;
+    // const LOG_N: u32 = 10;
+    const LOG_N: u32 = 22;
     const N: usize = 1 << LOG_N;
     let rng = &mut XorShiftRng::from_seed([0x3dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
     use ff::Field;
-    use crate::experiments::vdf::Fr;
+    use crate::experiments::Fr;
     use std::time::Instant;
     use crate::domains::Domain;
     use crate::fft::multicore::Worker;
@@ -146,19 +143,21 @@ fn test_parallel_FFT()
     let domain = Domain::<Fr>::new_for_size(a.len() as u64).unwrap();
     let omega = domain.generator;
 
-    let mut start = Instant::now();
+    let start = Instant::now();
     fft::parallel_fft::<Fr>(&mut a, &general_worker, &omega, LOG_N, log_cpus);
-    let mut end = Instant::now();
+    let end = Instant::now();
     let radix_2_time = end - start;
 
-    let mut start = Instant::now();
+    let start = Instant::now();
     radix4_fft::parallel_fft_radix_4::<Fr>(&mut b, &radix4_worker, &omega, LOG_N, radix4_log_cpus);
-    let mut end = Instant::now();
+    // let worker16 = Worker::new_with_cpus(16);
+    // radix4_fft::parallel_fft_radix_4::<Fr>(&mut b, &worker16, &omega, LOG_N, 2u32);
+    let end = Instant::now();
     let radix_4_time = end - start;
 
-    start = Instant::now();
+    let start = Instant::now();
     dit_fft::parallel_DIT_fft::<Fr>(&mut c, &general_worker, &omega, LOG_N, log_cpus, N);
-    end = Instant::now();
+    let end = Instant::now();
     let dit_fft_time = end - start;
 
     println!("Radix2 time: {}", radix_2_time.subsec_millis());
@@ -176,17 +175,17 @@ fn test_parallel_FFT()
     
 }
 
-
 #[test]
-fn test_FFT_Prunning()
+fn test_fft_prunning()
 {
     use rand::{XorShiftRng, SeedableRng, Rand};
-    const LOG_NONZERO_N: u32 = 18;
+    // const LOG_NONZERO_N: u32 = 18;
+    const LOG_NONZERO_N: u32 = 22;
     const LOG_N: u32 = LOG_NONZERO_N + 4;
     const N: usize = 1 << LOG_N;
     let rng = &mut XorShiftRng::from_seed([0x3dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
     use ff::Field;
-    use crate::experiments::vdf::Fr;
+    use crate::experiments::Fr;
     use std::time::Instant;
     use crate::domains::Domain;
     use crate::fft::multicore::Worker;
@@ -199,18 +198,19 @@ fn test_FFT_Prunning()
     let domain = Domain::<Fr>::new_for_size(a.len() as u64).unwrap();
     let omega = domain.generator;
 
-    let mut start = Instant::now();
+    let start = Instant::now();
     //fft::parallel_fft::<Fr>(&mut a, &worker, &omega, LOG_N, worker.log_num_cpus());
     dit_fft::parallel_DIT_fft::<Fr>(&mut a, &worker, &omega, LOG_N, worker.log_num_cpus(), N);
-    let mut end = Instant::now();
+    let end = Instant::now();
     let usual_time = end - start;
 
-    start = Instant::now();
+    let start = Instant::now();
     dit_fft::parallel_DIT_fft::<Fr>(&mut b, &worker, &omega, LOG_N, worker.log_num_cpus(), 1<<LOG_NONZERO_N);
-    end = Instant::now();
+    let end = Instant::now();
     let pruning_time = end - start;
 
     println!("usual time: {}", usual_time.subsec_millis());
+    println!("DIF usual time: {}", usual_time.subsec_millis());
     println!("pruning time: {}", pruning_time.subsec_millis());
     
     let matching = a.iter().zip(b.iter()).filter(|(a, b)| *a == *b).count();
