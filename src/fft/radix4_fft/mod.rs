@@ -1,10 +1,15 @@
 use ff::PrimeField;
 use super::multicore::*;
 
+
 pub(crate) fn best_fft<F: PrimeField>(a: &mut [F], worker: &Worker, omega: &F, log_n: u32)
 {
-    assert!(log_n.is_even()); // TODO: For now
-    let log_cpus = worker.log_num_cpus();
+    assert!(log_n % 2 == 0); // TODO: For now
+    let mut log_cpus = worker.log_num_cpus();
+    if (log_cpus % 2 != 0)
+    {
+        log_cpus -= 1;
+    }
 
     // we split into radix-4 kernels, so we need more points to start
     if log_n <= log_cpus {
@@ -25,12 +30,25 @@ fn base_4_digit_reverse(mut n: u64, l: u64) -> u64 {
     r
 }
 
+#[inline(always)]
+fn bitreverse(mut n: u64, l: u64) -> u64
+{
+    let mut r = 0;
+    for _ in 0..l
+    {
+        r = (r << 1) | (n & 1);
+        n >>= 1;
+    }
+    r
+}
+
 pub(crate) fn serial_fft_radix_4<F: PrimeField>(a: &mut [F], omega: &F, log_n: u32)
 {
     let n = a.len() as u64;
     assert_eq!(n, 1 << log_n);
 
-    let num_digits = log_n / 2 as u64;
+    assert!(log_n % 2 == 0);
+    let num_digits = (log_n / 2) as u64;
 
     for k in 0..n {
         let rk = base_4_digit_reverse(k, num_digits);
@@ -39,20 +57,62 @@ pub(crate) fn serial_fft_radix_4<F: PrimeField>(a: &mut [F], omega: &F, log_n: u
         }
     }
 
+    // v = W_4
+    let v = omega.pow(&[(n / 4) as u64]);
+
     let mut m = 1;
-    for _ in 0..log_n {
+    for _ in 0..(log_n / 2) {
         let w_m = omega.pow(&[(n / (4*m)) as u64]);
 
         let mut k = 0;
         while k < n {
             let mut w = F::one();
             for j in 0..m {
-                let mut t = a[(k+j+m) as usize];
-                t.mul_assign(&w);
-                let mut tmp = a[(k+j) as usize];
-                tmp.sub_assign(&t);
-                a[(k+j+m) as usize] = tmp;
-                a[(k+j) as usize].add_assign(&t);
+
+                // y_0 = x_0 + x_1 + x_2 + x_3
+                // y_1 = x_0 + W_4 * x_1 - x_2 - W_4 * x_3
+                // y_2 = x_0 - x_1 + x_2 - x3
+                // y_3 = x_0 - W_4 * x_1 - x_2 + W_4 * x_3
+
+                let mut u = w;
+
+                let mut x0 = a[(k+j) as usize];
+
+                let mut x1 = a[(k+j+m) as usize];
+                x1.mul_assign(&w);
+
+                let mut x2 = a[(k+j+2*m) as usize];
+                u.mul_assign(&w);
+                x2.mul_assign(&u);
+
+                let mut x3 = a[(k+j+3*m) as usize];
+                u.mul_assign(&w);
+                x3.mul_assign(&u);
+
+                let mut temp1 = x0;
+                temp1.add_assign(&x2);
+
+                let mut temp2 = x1;
+                temp2.add_assign(&x3);
+
+                a[(k+j) as usize] = temp1;
+                a[(k+j) as usize].add_assign(&temp2);
+                a[(k+j+2*m) as usize] = temp1;
+                a[(k+j+2*m) as usize].sub_assign(&temp2);
+
+                x1.mul_assign(&v);
+                x3.mul_assign(&v);
+
+                temp1 = x0;
+                temp1.sub_assign(&x2);
+                temp2 = x1;
+                temp2.sub_assign(&x3);
+
+                a[(k+j+m) as usize] = temp1;
+                a[(k+j+m) as usize].add_assign(&temp2);
+                a[(k+j+3*m) as usize] = temp1;
+                a[(k+j+3*m) as usize].sub_assign(&temp2);
+
                 w.mul_assign(&w_m);
             }
 
@@ -63,7 +123,7 @@ pub(crate) fn serial_fft_radix_4<F: PrimeField>(a: &mut [F], omega: &F, log_n: u
     }
 }
 
-pub(crate) fn parallel_fft<F: PrimeField>(
+pub(crate) fn parallel_fft_radix_4<F: PrimeField>(
     a: &mut [F],
     worker: &Worker,
     omega: &F,
@@ -72,10 +132,13 @@ pub(crate) fn parallel_fft<F: PrimeField>(
 )
 {
     assert!(log_n >= log_cpus);
-
-
+    
+    //we need log_n and log_cpu to be even
+    assert!(log_n % 2 == 0);
+    assert!(log_cpus % 2 == 0);
+    
     let num_cpus = 1 << log_cpus;
-    let log_new_n = log_n - log_cpus;
+    let log_new_n = (log_n - log_cpus);
     let mut tmp = vec![vec![F::zero(); 1 << log_new_n]; num_cpus];
     let new_omega = omega.pow(&[num_cpus as u64]);
 
@@ -91,7 +154,7 @@ pub(crate) fn parallel_fft<F: PrimeField>(
                 let mut elt = F::one();
                 for i in 0..(1 << log_new_n) {
                     for s in 0..num_cpus {
-                        let idx = (i + (s << log_new_n)) % (1 << log_n);
+                        let idx = (i + (s << log_new_n));
                         let mut t = a[idx];
                         t.mul_assign(&elt);
                         tmp[i].add_assign(&t);
