@@ -1,7 +1,7 @@
 use ff::PrimeField;
 use super::multicore::*;
 
-pub(crate) fn serial_DIT_fft<F: PrimeField>(a: &mut [F], omega: &F, log_n: u32, non_zero_entries_count: usize)
+pub(crate) fn serial_dit_fft<F: PrimeField>(a: &mut [F], omega: &F, log_n: u32, non_zero_entries_count: usize)
 {
     #[inline(always)]
     fn bitreverse(mut n: u64, l: u32) -> u64
@@ -52,7 +52,7 @@ pub(crate) fn serial_DIT_fft<F: PrimeField>(a: &mut [F], omega: &F, log_n: u32, 
     }
 }
 
-pub(crate) fn parallel_DIT_fft<F: PrimeField>(
+pub(crate) fn parallel_dit_fft<F: PrimeField>(
     a: &mut [F],
     worker: &Worker,
     omega: &F,
@@ -90,7 +90,7 @@ pub(crate) fn parallel_DIT_fft<F: PrimeField>(
                 }
 
                 // Perform sub-FFT
-                serial_DIT_fft(tmp, &new_omega, log_new_n, std::cmp::min(non_zero_entries_count, 1 << log_new_n));
+                serial_dit_fft(tmp, &new_omega, log_new_n, std::cmp::min(non_zero_entries_count, 1 << log_new_n));
             });
         }
     });
@@ -111,14 +111,14 @@ pub(crate) fn parallel_DIT_fft<F: PrimeField>(
     });
 }
 
-pub(crate) fn best_DIT_fft<F: PrimeField>(a: &mut [F], worker: &Worker, omega: &F, log_n: u32, non_zero_entries_count: usize)
+pub(crate) fn best_dit_fft<F: PrimeField>(a: &mut [F], worker: &Worker, omega: &F, log_n: u32, non_zero_entries_count: usize)
 {
     let log_cpus = worker.log_num_cpus();
 
     if log_n <= log_cpus {
-        serial_DIT_fft(a, omega, log_n, non_zero_entries_count);
+        serial_dit_fft(a, omega, log_n, non_zero_entries_count);
     } else {
-        parallel_DIT_fft(a, worker, omega, log_n, log_cpus, non_zero_entries_count);
+        parallel_dit_fft(a, worker, omega, log_n, log_cpus, non_zero_entries_count);
     }
 }
 
