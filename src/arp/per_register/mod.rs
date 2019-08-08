@@ -6,6 +6,7 @@ use crate::SynthesisError;
 use crate::polynomials::*;
 use crate::fft::multicore::Worker;
 use crate::fft::*;
+use super::density_query::*;
 
 fn make_witness_polymonials<F: PrimeField>(
     mut witness: Vec<Vec<F>>, 
@@ -30,7 +31,10 @@ fn make_witness_polymonials<F: PrimeField>(
     let num_cpus_hint = if num_cpus <= num_registers {
         Some(1)
     } else {
-        let threads_per_register = (num_registers - 1) / num_cpus + 1;
+        let mut threads_per_register = num_registers / num_cpus;
+        if num_registers % num_cpus != 0 {
+            threads_per_register += 1;
+        }
         Some(threads_per_register)
     };
 
@@ -96,6 +100,14 @@ impl<F: PrimeField> ARP<F> for ARPInstance<F, PerRegisterARP> {
         t.route()?;
 
         Ok(t)
+    }
+
+    fn is_satisfied(
+        proprties: &InstanceProperties<F>,
+        witness: &Vec<Vec<F>>,
+        worker: &Worker
+    ) -> Result<(), SynthesisError> {
+        Self::verify_witness(&proprties, witness, worker)
     }
 }
 
@@ -169,6 +181,132 @@ impl<F: PrimeField> ARPInstance<F, PerRegisterARP> {
 
         Ok(())
     }
+
+    fn verify_witness(
+        properties: &InstanceProperties<F>,
+        witness: &Vec<Vec<F>>,
+        worker: &Worker
+    ) -> Result<(), SynthesisError> {
+        fn evaluate_constraint_on_witness<F: PrimeField>(
+            constraint: &Constraint<F>,
+            witness: &Vec<Vec<F>>,
+            base_row: usize,
+        ) -> Result<F, SynthesisError> {
+            let mut value = constraint.constant_term;
+            for term in constraint.terms.iter() {
+                let v = evaluate_term_on_witness(&term, witness, base_row)?;
+                value.add_assign(&v);
+            }
+            
+            Ok(value)
+        }
+
+        fn evaluate_term_on_witness<F: PrimeField>(
+            term: &ConstraintTerm<F>,
+            witness: &Vec<Vec<F>>,
+            base_row: usize
+        ) -> Result<F, SynthesisError> {
+            match term {
+                ConstraintTerm::Univariate(ref t) => {
+                    evaluate_univariate_term_on_witness(
+                        t, 
+                        &witness,
+                        base_row
+                    )
+                },
+                ConstraintTerm::Polyvariate(ref poly_term) => {
+                    let mut result = F::one();
+                    for mut t in poly_term.terms.iter() {
+                        let v = evaluate_univariate_term_on_witness(
+                            &t, 
+                            &witness,
+                            base_row
+                        )?;
+                        result.mul_assign(&v);
+                    }
+
+                    result.mul_assign(&poly_term.coeff);
+
+                    Ok(result)
+                }
+            }
+        }
+
+        fn evaluate_univariate_term_on_witness<F: PrimeField>(
+            univariate_term: &UnivariateTerm<F>,
+            witness: &Vec<Vec<F>>,
+            base_row: usize
+        ) -> Result<F, SynthesisError> {
+            let step_delta = match univariate_term.steps_difference {
+                StepDifference::Steps(steps) => steps,
+                _ => unreachable!()
+            };
+
+            let reg_num = match univariate_term.register {
+                Register::Register(reg_num) => reg_num,
+                _ => unreachable!()
+            };
+
+            let num_rows = witness[reg_num].len();
+            let row = base_row + step_delta;
+            if row >= num_rows {
+                return Err(SynthesisError::Error);
+            }
+
+            let value = witness[reg_num][row];
+            let mut value = value.pow([univariate_term.power]);
+            value.mul_assign(&univariate_term.coeff);
+
+            Ok(value)
+        }
+
+        let num_rows = witness[0].len();
+
+        // these constraints are not remapped, so step differences are 
+        for c in properties.constraints.iter() {
+            let density: Box<dyn DensityQuery> = match c.density {
+                ConstraintDensity::Dense(ref dense) => {
+                    let dense_query = DenseConstraintQuery::new(&dense, num_rows);
+
+                    Box::from(dense_query)
+                },
+                _ => {
+                    unimplemented!();
+                }
+            };
+
+            for row in density {
+                let value = evaluate_constraint_on_witness(
+                    c, 
+                    witness, 
+                    row
+                )?;
+
+                if !value.is_zero() {
+                    return Err(SynthesisError::Error)
+                }
+            }
+        } 
+
+        // these constraints are not remapped, so step differences are 
+        for bc in properties.boundary_constraints.iter() {
+            let reg_num = match bc.register {
+                Register::Register(reg_num) => reg_num,
+                _ => unreachable!()
+            };
+
+            let at_row = bc.at_row;
+
+            if let Some(expected) = bc.value {
+                let from_witness = witness[reg_num][at_row];
+                if expected != from_witness {
+                    return Err(SynthesisError::Error);
+                }
+            }
+        } 
+
+        Ok(())
+    }
 }
 
 #[test]
@@ -193,6 +331,9 @@ fn test_fib_conversion_into_per_register_arp() {
     let witness = witness.expect("some witness");
     println!("Witness = {:?}", witness);
     let worker = Worker::new();
+
+    let is_satisfied = ARPInstance::<Fr, PerRegisterARP>::is_satisfied(&props, &witness, &worker);
+    assert!(is_satisfied.is_ok());
     let arp = ARPInstance::<Fr, PerRegisterARP>::from_instance(props, &worker).expect("must work");
     for c in arp.properties.constraints.iter() {
         println!("{:?}", c);

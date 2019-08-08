@@ -417,11 +417,12 @@ impl<F: PrimeField> Polynomial<F, Coefficients> {
         let num_cpus_hint = if num_cpus <= factor {
             Some(1)
         } else {
-            let threads_per_coset = (factor - 1) / num_cpus + 1;
+            let mut threads_per_coset = factor / num_cpus;
+            if factor % num_cpus != 0 {
+                threads_per_coset += 1;
+            }
             Some(threads_per_coset)
         };
-
-        // asuume num_cpu > factor. TODO: make clever version for another case
 
         assert!(factor.is_power_of_two());
         let new_size = self.coeffs.len() * factor;
@@ -542,7 +543,10 @@ impl<F: PrimeField> Polynomial<F, Coefficients> {
         let num_cpus_hint = if num_cpus <= factor {
             Some(1)
         } else {
-            let threads_per_coset = (factor - 1) / num_cpus + 1;
+            let mut threads_per_coset = factor / num_cpus;
+            if factor % num_cpus != 0 {
+                threads_per_coset += 1;
+            }
             Some(threads_per_coset)
         };
 

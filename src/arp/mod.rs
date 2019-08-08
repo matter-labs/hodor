@@ -5,11 +5,16 @@ use crate::fft::multicore::Worker;
 use crate::*;
 
 use ff::PrimeField;
-mod into_arp;
 // mod single_witness;
 mod per_register;
+mod density_query;
 
-pub use into_arp::*;
+pub trait IntoARP<F: PrimeField> {
+    // return full trace, trace constraints and boundary constraints
+    // registers should be remapped to have uniform structure, so ARP knows nothing about
+    // what is a meaning of particular register
+    fn into_arp(self) -> (Option<Vec<Vec<F>>>, InstanceProperties<F>);
+}
 
 pub trait ARPType: 
     Sized 
@@ -47,6 +52,12 @@ pub trait ARP<F :PrimeField>:
         witness: Vec<Vec<F>>,
         worker: &Worker
     ) -> Result<Vec<Polynomial<F, Coefficients>>, SynthesisError>;
+
+    fn is_satisfied(
+        proprties: &InstanceProperties<F>,
+        witness: &Vec<Vec<F>>,
+        worker: &Worker
+    ) -> Result<(), SynthesisError>;
 }
 
 #[derive(Clone, Debug)]
