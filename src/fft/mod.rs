@@ -60,6 +60,7 @@ fn test_sequential_radix4_fft()
 {
     use rand::{XorShiftRng, SeedableRng, Rand};
 <<<<<<< HEAD
+<<<<<<< HEAD
     const LOG_N: u32 = 20;
     const N: usize = 1 << LOG_N;
     let rng = &mut XorShiftRng::from_seed([0x3dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
@@ -69,6 +70,11 @@ fn test_sequential_radix4_fft()
     const N: usize = 1 << LOG_N;
     let rng = &mut XorShiftRng::from_seed([0x3dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
 >>>>>>> with radix-4 prunning
+=======
+    const LOG_N: u32 = 22;
+    const N: usize = 1 << LOG_N;
+    let rng = &mut XorShiftRng::from_seed([0x3dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
+>>>>>>> 755be4144bd70bb7175c69b179a544777e08e96e
     use crate::experiments::Fr;
     use std::time::Instant;
     use crate::domains::Domain;
@@ -105,13 +111,19 @@ fn test_sequential_radix4_fft()
     println!("Radix4 time: {}", radix_4_time.subsec_millis());
     println!("dit time: {}", dit_fft_time.subsec_millis());
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
+=======
+>>>>>>> 755be4144bd70bb7175c69b179a544777e08e96e
     println!("radix-4 dit time: {}", dit_radix_4_time.subsec_millis());
     
 
     //println!("{:?}", a);
     //println!("{:?}", d);
+<<<<<<< HEAD
 >>>>>>> with radix-4 prunning
+=======
+>>>>>>> 755be4144bd70bb7175c69b179a544777e08e96e
 
     let matching_radix4 = a.iter().zip(b.iter()).filter(|(a, b)| *a == *b).count();
     let matching_dit = a.iter().zip(c.iter()).filter(|(a, c)| *a == *c).count();
@@ -143,9 +155,12 @@ fn test_parallel_radix4_fft()
 {
     use rand::{XorShiftRng, SeedableRng, Rand};
 <<<<<<< HEAD
+<<<<<<< HEAD
     // const LOG_N: u32 = 10;
 =======
 >>>>>>> with radix-4 prunning
+=======
+>>>>>>> 755be4144bd70bb7175c69b179a544777e08e96e
     const LOG_N: u32 = 22;
     const N: usize = 1 << LOG_N;
     let rng = &mut XorShiftRng::from_seed([0x3dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
@@ -170,10 +185,13 @@ fn test_parallel_radix4_fft()
     let omega = domain.generator;
 
 <<<<<<< HEAD
+<<<<<<< HEAD
     let start = Instant::now();
     fft::parallel_fft::<Fr>(&mut a, &general_worker, &omega, LOG_N, log_cpus);
     let end = Instant::now();
 =======
+=======
+>>>>>>> 755be4144bd70bb7175c69b179a544777e08e96e
     let mut start = Instant::now();
     fft::parallel_fft::<Fr>(&mut a, &radix4_worker, &omega, LOG_N, radix4_log_cpus);
     let mut end = Instant::now();
@@ -188,10 +206,13 @@ fn test_parallel_radix4_fft()
     let radix_4_time = end - start;
 
 <<<<<<< HEAD
+<<<<<<< HEAD
     let start = Instant::now();
     dit_fft::parallel_DIT_fft::<Fr>(&mut c, &general_worker, &omega, LOG_N, log_cpus, N);
     let end = Instant::now();
 =======
+=======
+>>>>>>> 755be4144bd70bb7175c69b179a544777e08e96e
     start = Instant::now();
     dit_fft::parallel_DIT_fft::<Fr>(&mut c, &radix4_worker, &omega, LOG_N, radix4_log_cpus, N);
     end = Instant::now();
@@ -253,11 +274,15 @@ fn test_fft_prunning()
     let omega = domain.generator;
 
 <<<<<<< HEAD
+<<<<<<< HEAD
     let start = Instant::now();
     //fft::parallel_fft::<Fr>(&mut a, &worker, &omega, LOG_N, worker.log_num_cpus());
 =======
     let mut start = Instant::now();
 >>>>>>> with radix-4 prunning
+=======
+    let mut start = Instant::now();
+>>>>>>> 755be4144bd70bb7175c69b179a544777e08e96e
     dit_fft::parallel_DIT_fft::<Fr>(&mut a, &worker, &omega, LOG_N, worker.log_num_cpus(), N);
     let end = Instant::now();
     let usual_time = end - start;

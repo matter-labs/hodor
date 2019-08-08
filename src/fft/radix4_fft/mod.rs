@@ -101,6 +101,7 @@ pub(crate) fn serial_fft_radix_4<F: PrimeField>(a: &mut [F], omega: &F, log_n: u
                 a[(k+j+2*m) as usize].sub_assign(&x1_plus_x3);
 
 <<<<<<< HEAD
+<<<<<<< HEAD
                 let mut x0_minus_x2 = x0;
                 x0_minus_x2.sub_assign(&x2);
 
@@ -108,12 +109,17 @@ pub(crate) fn serial_fft_radix_4<F: PrimeField>(a: &mut [F], omega: &F, log_n: u
                 x1_minus_x3_by_w4.sub_assign(&x3);
                 x1_minus_x3_by_w4.mul_assign(&v);
 =======
+=======
+>>>>>>> 755be4144bd70bb7175c69b179a544777e08e96e
                 temp1 = x0;
                 temp1.sub_assign(&x2);
                 temp2 = x1;
                 temp2.sub_assign(&x3);
                 temp2.mul_assign(&v);
+<<<<<<< HEAD
 >>>>>>> with radix-4 prunning
+=======
+>>>>>>> 755be4144bd70bb7175c69b179a544777e08e96e
 
                 a[(k+j+m) as usize] = x0_minus_x2;
                 a[(k+j+m) as usize].add_assign(&x1_minus_x3_by_w4);
