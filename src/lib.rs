@@ -11,9 +11,6 @@ extern crate blake2s_simd;
 #[macro_use] extern crate lazy_static;
 #[macro_use] extern crate cfg_if;
 
-// extern crate flame;
-// #[macro_use] extern crate flamer;
-
 pub mod air;
 pub mod arp;
 pub mod fri;
@@ -40,21 +37,23 @@ pub struct Fr(FrRepr);
 #[derive(Debug)]
 pub enum SynthesisError {
     Error,
+    Unsatisfied(String),
+    InvalidValue(String),
+    DivisionByZero(String),
 }
 
 use std::fmt;
 use std::error::Error;
 
-impl Error for SynthesisError {
-    fn description(&self) -> &str {
-        match *self {
-            SynthesisError::Error => "General error for now",
-        }
-    }
-}
+impl Error for SynthesisError {}
 
 impl fmt::Display for SynthesisError {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        write!(f, "{}", self.description())
+        match self {
+            SynthesisError::Error => write!(f, "{}", "General error for now"),
+            SynthesisError::Unsatisfied(descr) => write!(f, "Unsatisfied constraint, {}", descr),
+            SynthesisError::InvalidValue(descr) => write!(f, "Invalid parameter value, {}", descr),
+            SynthesisError::DivisionByZero(descr) => write!(f, "Division by zero, {}", descr),
+        }
     }
 }

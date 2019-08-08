@@ -185,7 +185,7 @@ impl<F: PrimeField> ARPInstance<F, PerRegisterARP> {
     fn verify_witness(
         properties: &InstanceProperties<F>,
         witness: &Vec<Vec<F>>,
-        worker: &Worker
+        _worker: &Worker
     ) -> Result<(), SynthesisError> {
         fn evaluate_constraint_on_witness<F: PrimeField>(
             constraint: &Constraint<F>,
@@ -250,7 +250,10 @@ impl<F: PrimeField> ARPInstance<F, PerRegisterARP> {
             let num_rows = witness[reg_num].len();
             let row = base_row + step_delta;
             if row >= num_rows {
-                return Err(SynthesisError::Error);
+                return Err(SynthesisError::InvalidValue(
+                    format!("access to the value out of the trace at row {}", row)
+                    )    
+                );
             }
 
             let value = witness[reg_num][row];
@@ -283,7 +286,10 @@ impl<F: PrimeField> ARPInstance<F, PerRegisterARP> {
                 )?;
 
                 if !value.is_zero() {
-                    return Err(SynthesisError::Error)
+                    return Err(SynthesisError::Unsatisfied(
+                            format!("constraint: \n {} \n is unsatisfied at the row {}", c, row)
+                        )
+                    );
                 }
             }
         } 
@@ -332,12 +338,14 @@ fn test_fib_conversion_into_per_register_arp() {
     println!("Witness = {:?}", witness);
     let worker = Worker::new();
 
+    for c in props.constraints.iter() {
+        // println!("{:?}", c);
+        println!("{}", c);
+    }
+
     let is_satisfied = ARPInstance::<Fr, PerRegisterARP>::is_satisfied(&props, &witness, &worker);
     assert!(is_satisfied.is_ok());
     let arp = ARPInstance::<Fr, PerRegisterARP>::from_instance(props, &worker).expect("must work");
-    for c in arp.properties.constraints.iter() {
-        println!("{:?}", c);
-    }
 
     let witness_polys = arp.calculate_witness_polys(witness.clone(), &worker).expect("must work");
     println!("Witness polys = {:?}", witness_polys);

@@ -22,6 +22,96 @@ pub struct Constraint<F: PrimeField> {
     pub density: ConstraintDensity,
 }
 
+impl<F: PrimeField> std::fmt::Display for Constraint<F> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        writeln!(f, "Polynomial constraint of degree {}", self.degree)?;
+        write!(f, "0 = {} ", self.constant_term)?;
+        let num_terms = self.terms.len();
+        for i in 0..num_terms {
+            let term = &self.terms[i];
+            write!(f, "{}", term)?;
+            if i != num_terms - 1 {
+                write!(f, " ")?;
+            }
+        }
+        write!(f, ";")
+    }
+}
+
+impl<F: PrimeField> std::fmt::Display for ConstraintTerm<F> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        match self {
+            ConstraintTerm::Univariate(t) => {
+                write!(f, "{}", t)?;
+            },
+            ConstraintTerm::Polyvariate(p) => {
+                let one = F::one();
+                let mut minus_one = F::one();
+                minus_one.negate();
+                if p.coeff == one {
+                    write!(f, "+ ")?;
+                } else if p.coeff == minus_one {
+                    write!(f, "- ")?;
+                } else {
+                    write!(f, "+ {}* ", p.coeff)?;
+                }
+
+
+                let num_terms = p.terms.len();
+                for i in 0..num_terms {
+                    let t = p.terms[i];
+                    let num_steps = match t.steps_difference {
+                        StepDifference::Steps(num_steps) => num_steps,
+                        _ => unimplemented!()
+                    };
+                    match t.register {
+                        Register::Register(reg_num) => {
+                            write!(f, "(R_{}(t+{}))^{}", reg_num, num_steps, t.power)?;
+                        },
+                        _ => {
+                            unimplemented!();
+                        }
+                    }
+                    if i != num_terms - 1 {
+                        write!(f, "*")?;
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl<F: PrimeField> std::fmt::Display for UnivariateTerm<F> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        let one = F::one();
+        let mut minus_one = F::one();
+        minus_one.negate();
+        if self.coeff == one {
+            write!(f, "+ ")?;
+        } else if self.coeff == minus_one {
+            write!(f, "- ")?;
+        } else {
+            write!(f, "+ {}*", self.coeff)?;
+        }
+        let num_steps = match self.steps_difference {
+            StepDifference::Steps(num_steps) => num_steps,
+            _ => unimplemented!()
+        };
+        match self.register {
+            Register::Register(reg_num) => {
+                write!(f, "(R_{}(t+{}))^{}", reg_num, num_steps, self.power)?;
+            },
+            _ => {
+                unimplemented!();
+            }
+        }
+
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConstraintTerm<F: PrimeField> {
     Univariate(UnivariateTerm<F>),
