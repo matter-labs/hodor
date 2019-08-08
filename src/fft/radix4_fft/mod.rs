@@ -45,9 +45,9 @@ fn bitreverse(mut n: u64, l: u64) -> u64
 pub(crate) fn serial_fft_radix_4<F: PrimeField>(a: &mut [F], omega: &F, log_n: u32)
 {
     let n = a.len() as u64;
-    assert_eq!(n, 1 << log_n);
+    //assert_eq!(n, 1 << log_n);
 
-    assert!(log_n % 2 == 0);
+    //assert!(log_n % 2 == 0);
     let num_digits = (log_n / 2) as u64;
 
     for k in 0..n {
@@ -100,12 +100,20 @@ pub(crate) fn serial_fft_radix_4<F: PrimeField>(a: &mut [F], omega: &F, log_n: u
                 a[(k+j+2*m) as usize] = x0_plus_x2;
                 a[(k+j+2*m) as usize].sub_assign(&x1_plus_x3);
 
+<<<<<<< HEAD
                 let mut x0_minus_x2 = x0;
                 x0_minus_x2.sub_assign(&x2);
 
                 let mut x1_minus_x3_by_w4 = x1;
                 x1_minus_x3_by_w4.sub_assign(&x3);
                 x1_minus_x3_by_w4.mul_assign(&v);
+=======
+                temp1 = x0;
+                temp1.sub_assign(&x2);
+                temp2 = x1;
+                temp2.sub_assign(&x3);
+                temp2.mul_assign(&v);
+>>>>>>> with radix-4 prunning
 
                 a[(k+j+m) as usize] = x0_minus_x2;
                 a[(k+j+m) as usize].add_assign(&x1_minus_x3_by_w4);
@@ -130,11 +138,11 @@ pub(crate) fn parallel_fft_radix_4<F: PrimeField>(
     log_cpus: u32
 )
 {
-    assert!(log_n >= log_cpus);
+    //assert!(log_n >= log_cpus);
     
     //we need log_n and log_cpu to be even
-    assert!(log_n % 2 == 0);
-    assert!(log_cpus % 2 == 0);
+    //assert!(log_n % 2 == 0);
+    //assert!(log_cpus % 2 == 0);
     
     let num_cpus = 1 << log_cpus;
     let log_new_n = log_n - log_cpus;
@@ -153,7 +161,7 @@ pub(crate) fn parallel_fft_radix_4<F: PrimeField>(
                 let mut elt = F::one();
                 for i in 0..(1 << log_new_n) {
                     for s in 0..num_cpus {
-                        let idx = (i + (s << log_new_n));
+                        let idx = i + (s << log_new_n);
                         let mut t = a[idx];
                         t.mul_assign(&elt);
                         tmp[i].add_assign(&t);
