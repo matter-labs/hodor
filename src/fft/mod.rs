@@ -181,7 +181,7 @@ fn test_parallel_FFT()
 fn test_FFT_Prunning()
 {
     use rand::{XorShiftRng, SeedableRng, Rand};
-    const LOG_NONZERO_N: u32 = 18;
+    const LOG_NONZERO_N: u32 = 10;
     const LOG_N: u32 = LOG_NONZERO_N + 4;
     const N: usize = 1 << LOG_N;
     let rng = &mut XorShiftRng::from_seed([0x3dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
