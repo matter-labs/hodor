@@ -2,8 +2,7 @@ use ff::{
     PrimeField,
 };
 
-use super::Register;
-use super::ConstraintDensity;
+use super::*;
 
 use std::ops::{AddAssign, SubAssign, MulAssign};
 use std::default::Default;
@@ -11,13 +10,12 @@ use std::default::Default;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BoundaryConstraint<F: PrimeField> {
     pub register: Register,
-    pub at_step: usize,
+    pub at_row: usize,
     pub value: Option<F>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Constraint<F: PrimeField> {
-    pub start_at: usize,
     pub constant_term: F,
     pub terms: Vec<ConstraintTerm<F>>,
     pub degree: u64,
@@ -42,6 +40,19 @@ pub struct UnivariateTerm<F: PrimeField>{
 pub enum StepDifference<F: PrimeField> {
     Steps(usize),
     Mask(F),
+}
+
+impl<F: PrimeField> std::hash::Hash for StepDifference<F> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match &self {
+            StepDifference::Steps(s) => {
+                s.hash(state);
+            },
+            StepDifference::Mask(m) => {
+                m.into_raw_repr().as_ref().hash(state);
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -81,11 +92,10 @@ impl<F: PrimeField> Default for PolyvariateTerm<F> {
 impl<F: PrimeField> Default for Constraint<F> {
     fn default() -> Constraint<F> {
         Constraint::<F> {
-            start_at: 0,
             constant_term: F::zero(),
             terms: vec![],
             degree: 0u64,
-            density: ConstraintDensity::Dense,
+            density: ConstraintDensity::Dense(DenseConstraint::default()),
         }
     }
 }

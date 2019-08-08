@@ -26,7 +26,7 @@ impl<F: PrimeField> Blake2sTranscript<F> {
     const SHAVE_BITS: u32 = 256 - F::CAPACITY;
     const REPR_SIZE: usize = std::mem::size_of::<F::Repr>();
         
-    fn new() -> Self {
+    pub fn new() -> Self {
         assert!(F::NUM_BITS < 256);
         let state = (*TRANSCRIPT_BLAKE2S_PARAMS).clone();
         Self {
@@ -43,7 +43,7 @@ impl<F: PrimeField> Transcript<F> for Blake2sTranscript<F> {
 
     fn commit_field_element(&mut self, element: &F) {
         let repr = element.into_repr();
-        let mut bytes: Vec<u8> = vec![];
+        let mut bytes: Vec<u8> = vec![0u8; Self::REPR_SIZE];
         repr.write_be(&mut bytes[..]).expect("should write");
         self.state.update(&bytes[..]);
     }
