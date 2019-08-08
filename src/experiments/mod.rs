@@ -7,8 +7,6 @@ use ff::*;
 #[derive(PrimeField)]
 #[PrimeFieldModulus = "3618502788666131213697322783095070105623107215331596699973092056135872020481"]
 #[PrimeFieldGenerator = "3"]
-<<<<<<< HEAD
-<<<<<<< HEAD
 pub struct Fr(FrRepr);
 
 #[test]
@@ -40,9 +38,3 @@ fn test_proper_field(){
     
 
 }
-=======
-pub struct Fr(FrRepr);
->>>>>>> 755be4144bd70bb7175c69b179a544777e08e96e
-=======
-pub struct Fr(FrRepr);
->>>>>>> 755be4144bd70bb7175c69b179a544777e08e96e
