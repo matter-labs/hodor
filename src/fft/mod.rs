@@ -179,8 +179,12 @@ fn test_parallel_radix4_fft()
 fn test_fft_prunning()
 {
     use rand::{XorShiftRng, SeedableRng, Rand};
+<<<<<<< HEAD
     // const LOG_NONZERO_N: u32 = 18;
     const LOG_NONZERO_N: u32 = 22;
+=======
+    const LOG_NONZERO_N: u32 = 10;
+>>>>>>> modified
     const LOG_N: u32 = LOG_NONZERO_N + 4;
     const N: usize = 1 << LOG_N;
     let rng = &mut XorShiftRng::from_seed([0x3dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
