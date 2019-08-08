@@ -244,13 +244,13 @@ impl<F: PrimeField> IntoARP<F> for CubicVDF<F> {
 
         let final_c0_constraint = BoundaryConstraint::<F> {
             register: c0_register,
-            at_row: self.num_operations + 1,
+            at_row: self.num_operations,
             value: c0_witness.last().cloned()
         };
 
         let final_c1_constraint = BoundaryConstraint::<F> {
             register: c1_register,
-            at_row: self.num_operations + 1,
+            at_row: self.num_operations,
             value: c1_witness.last().cloned()
         };
 
@@ -292,6 +292,10 @@ fn try_prove_cubic_vdf() {
     println!("Done preraping and calculating VFD in {} ms", start.elapsed().as_millis());
 
     let witness = witness.expect("some witness");
+
+    // let is_satisfied = ARPInstance::<Fr, PerRegisterARP>::is_satisfied(&props, &witness, &worker);
+    // assert!(is_satisfied.is_ok());
+
     let arp = ARPInstance::<Fr, PerRegisterARP>::from_instance(props, &worker).expect("must work");
 
     let start = Instant::now();

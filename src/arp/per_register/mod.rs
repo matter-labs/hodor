@@ -216,7 +216,7 @@ impl<F: PrimeField> ARPInstance<F, PerRegisterARP> {
                 },
                 ConstraintTerm::Polyvariate(ref poly_term) => {
                     let mut result = F::one();
-                    for mut t in poly_term.terms.iter() {
+                    for t in poly_term.terms.iter() {
                         let v = evaluate_univariate_term_on_witness(
                             &t, 
                             &witness,
