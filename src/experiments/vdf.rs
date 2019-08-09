@@ -43,56 +43,27 @@ impl<F: PrimeField> IntoARP<F> for VDF<F> {
         let c0_register = Register::Register(0);
         let c1_register = Register::Register(1);
 
-        let c0_value_now = UnivariateTerm::<F> {
-            coeff: F::one(),
-            register: c0_register,
-            steps_difference: StepDifference::Steps(0),
-            power: 1
-        };
+        let c0_value_now = UnivariateTerm::<F>::from(c0_register);
+        let c1_value_now = UnivariateTerm::<F>::from(c1_register);
 
-        let c1_value_now = UnivariateTerm::<F> {
-            coeff: F::one(),
-            register: c1_register,
-            steps_difference: StepDifference::Steps(0),
-            power: 1
-        };
+        let mut c0_value_next_step = UnivariateTerm::<F>::from(c0_register);
+        c0_value_next_step.set_step_difference(1);
 
-        let c0_value_next_step = UnivariateTerm::<F> {
-            coeff: F::one(),
-            register: c0_register,
-            steps_difference: StepDifference::Steps(1),
-            power: 1
-        };
+        let mut c1_value_next_step = UnivariateTerm::<F>::from(c1_register);
+        c1_value_next_step.set_step_difference(1);
 
-        let c1_value_next_step = UnivariateTerm::<F> {
-            coeff: F::one(),
-            register: c1_register,
-            steps_difference: StepDifference::Steps(1),
-            power: 1
-        };
+        let c0_squared = c0_value_now.pow(2u64);
 
-        let c0_squared = UnivariateTerm::<F> {
-            coeff: F::one(),
-            register: c0_register,
-            steps_difference: StepDifference::Steps(0),
-            power: 2
-        };
-
-        let c1_squared_by_r = UnivariateTerm::<F> {
-            coeff: non_residue,
-            register: c1_register,
-            steps_difference: StepDifference::Steps(0),
-            power: 2
-        };
+        let mut c1_squared_by_r = c1_value_now.pow(2u64);
+        c1_squared_by_r *= &non_residue;
 
         let mut two = F::one();
         two.double();
 
-        let two_c0_c1 = PolyvariateTerm::<F> {
-            coeff: two,
-            terms: vec![c0_value_now, c1_value_now],
-            total_degree: 2u64
-        };
+        let mut two_c0_c1 = PolyvariateTerm::<F>::default();
+        two_c0_c1 *= &two;
+        two_c0_c1 *= c0_value_now;
+        two_c0_c1 *= c1_value_now;
 
         let mut constraint_0 = Constraint::default();
         constraint_0.density = ConstraintDensity::default();

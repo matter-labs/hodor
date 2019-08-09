@@ -152,6 +152,47 @@ pub struct PolyvariateTerm<F: PrimeField> {
     pub total_degree: u64
 }
 
+// Univariate term implementation
+
+impl<F: PrimeField> From<Register> for UnivariateTerm<F> {
+    fn from(register: Register) -> UnivariateTerm<F> {
+        UnivariateTerm::<F> {
+            coeff: F::one(),
+            register: register,
+            steps_difference: StepDifference::Steps(0),
+            power: 1
+        }
+    }
+}
+
+impl<F: PrimeField> MulAssign<&F> for UnivariateTerm<F> {
+    fn mul_assign(&mut self, rhs: &F) {
+        self.coeff.mul_assign(&rhs);
+    }
+}
+
+impl<F: PrimeField> MulAssign<F> for UnivariateTerm<F> {
+    fn mul_assign(&mut self, rhs: F) {
+        self.coeff.mul_assign(&rhs);
+    }
+}
+
+impl<F: PrimeField> UnivariateTerm<F> {
+    pub fn set_step_difference(&mut self, steps: usize) {
+        self.steps_difference = StepDifference::Steps(steps);
+    }
+
+    pub fn pow(&self, power: u64) -> Self {
+        let new_power = self.power.checked_mul(power).expect("maximum power is limited to U64MAX");
+        let mut new = self.clone();
+        new.power = new_power;
+
+        new
+    }
+}
+
+// Polyvariate term implementation
+
 impl<F: PrimeField> From<(F, UnivariateTerm<F>)> for PolyvariateTerm<F> {
     fn from(w: (F, UnivariateTerm<F>)) -> PolyvariateTerm<F> {
         let (mut coeff, mut constraint) = w;
@@ -179,17 +220,6 @@ impl<F: PrimeField> Default for PolyvariateTerm<F> {
     }
 }
 
-impl<F: PrimeField> Default for Constraint<F> {
-    fn default() -> Constraint<F> {
-        Constraint::<F> {
-            constant_term: F::zero(),
-            terms: vec![],
-            degree: 0u64,
-            density: ConstraintDensity::Dense(DenseConstraint::default()),
-        }
-    }
-}
-
 impl<F: PrimeField> MulAssign<UnivariateTerm<F>> for PolyvariateTerm<F> {
     fn mul_assign(&mut self, rhs: UnivariateTerm<F>) {
         let mut other = rhs;
@@ -197,6 +227,12 @@ impl<F: PrimeField> MulAssign<UnivariateTerm<F>> for PolyvariateTerm<F> {
         other.coeff = F::one();
         self.total_degree += other.power;
         self.terms.push(other);
+    }
+}
+
+impl<F: PrimeField> MulAssign<F> for PolyvariateTerm<F> {
+    fn mul_assign(&mut self, other: F) {
+        self.coeff.mul_assign(&other);
     }
 }
 
@@ -211,6 +247,19 @@ impl<F: PrimeField> MulAssign<PolyvariateTerm<F>> for PolyvariateTerm<F> {
         self.coeff.mul_assign(&rhs.coeff);
         self.total_degree += rhs.total_degree;
         self.terms.extend(rhs.terms.into_iter());
+    }
+}
+
+// Constraint implementation
+
+impl<F: PrimeField> Default for Constraint<F> {
+    fn default() -> Constraint<F> {
+        Constraint::<F> {
+            constant_term: F::zero(),
+            terms: vec![],
+            degree: 0u64,
+            density: ConstraintDensity::Dense(DenseConstraint::default()),
+        }
     }
 }
 

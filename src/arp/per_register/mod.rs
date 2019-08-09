@@ -287,7 +287,7 @@ impl<F: PrimeField> ARPInstance<F, PerRegisterARP> {
 
                 if !value.is_zero() {
                     return Err(SynthesisError::Unsatisfied(
-                            format!("constraint: \n {} \n is unsatisfied at the row {}", c, row)
+                            format!("constraint:\n{}\nis unsatisfied at the row {}", c, row)
                         )
                     );
                 }
