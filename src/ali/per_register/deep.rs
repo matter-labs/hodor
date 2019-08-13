@@ -30,8 +30,6 @@ impl<F: PrimeField> ALIInstance<F, PerRegisterARP> {
 
         let mut f_at_z_m = vec![];
 
-        println!("All masks length = {}", self.all_masks.len());
-
         for m in self.all_masks.iter() {
             let mut root = match m.steps_difference {
                 StepDifference::Mask(mask) => {

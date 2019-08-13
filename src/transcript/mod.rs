@@ -61,8 +61,6 @@ impl<F: PrimeField> Transcript<F> for Blake2sTranscript<F> {
         repr.as_mut()[last_limb_idx] &= shaving_mask;
         let value = F::from_repr(repr).expect("in a field");
 
-        println!("Value from transcript = {}", value);
-
         value
     }
 }

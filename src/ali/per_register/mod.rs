@@ -216,7 +216,6 @@ impl<F: PrimeField> ALIInstance<F, PerRegisterARP> {
             let mut q_poly = Polynomial::<F, Coefficients>::new_for_size(2)?;
             q_poly.as_mut()[1] = F::one();
             let root = column_domain.generator.pow([row as u64]);
-            println!("Root for boundary constraint = {}", root);
             q_poly.as_mut()[0].sub_assign(&root);
             let mut inverse_q_poly_coset_values = q_poly.coset_evaluate_at_domain_for_degree_one(
                 &worker, 
@@ -421,7 +420,7 @@ impl<F: PrimeField> ALIInstance<F, PerRegisterARP> {
         }
 
         let mut evaluated_terms_map: IndexMap::<WitnessEvaluationData<F>, Polynomial<F, Values>> = IndexMap::new();
-        println!("Constraints by density len = {:?}", self.constraints_batched_by_density.len());
+
         // now evaluate normal constraints
         for (density, batch) in self.constraints_batched_by_density.iter() {
             let mut batch_values = g_values.clone();
@@ -480,7 +479,6 @@ impl<F: PrimeField> ALIInstance<F, PerRegisterARP> {
         let boundary_lde_factor = self.max_constraint_power;
 
         // now evaluate normal constraints
-        println!("Boundary constraints len = {:?}", self.properties.boundary_constraints.len());
         for b_c in self.properties.boundary_constraints.iter() {
             let alpha = transcript.get_challenge();
             let beta = transcript.get_challenge();

@@ -103,8 +103,6 @@ impl<F: PrimeField, T: Transcript<F>, I: IOP<F>> Verifier<F, T, I, PerRegisterAR
 
         let mut constraint_challenges = vec![];
 
-        // now evaluate normal constraints
-        println!("Constraints by density len = {:?}", constraints_batched_by_density.len());
         for (_density, batch) in constraints_batched_by_density.iter() {
             for c in batch.iter()   {
                 let constraint_power = c.degree;
@@ -117,7 +115,6 @@ impl<F: PrimeField, T: Transcript<F>, I: IOP<F>> Verifier<F, T, I, PerRegisterAR
         }
 
         let mut boundary_constraint_challenges = vec![];
-        println!("Boundary constraints len = {:?}", instance.boundary_constraints.len());
         for _ in instance.boundary_constraints.iter() {
             let alpha = transcript.get_challenge();
             let beta = transcript.get_challenge();
@@ -147,7 +144,7 @@ impl<F: PrimeField, T: Transcript<F>, I: IOP<F>> Verifier<F, T, I, PerRegisterAR
         })
     }
 
-    pub(crate) fn simulate_h1_from_f_at_z (
+    fn simulate_h1_from_f_at_z (
         &self,
         transcript: T,
         natural_x_index: usize,
@@ -162,8 +159,6 @@ impl<F: PrimeField, T: Transcript<F>, I: IOP<F>> Verifier<F, T, I, PerRegisterAR
         let mut transcript = transcript;
 
         // (f_i(x) - f(M*z)) / (x - M*z) = h_1(x)
-
-        println!("All masks length = {}", self.all_masks.len());
 
         for (m, f_at_z) in self.all_masks.iter()
                     .zip(self.f_at_z_m.iter()) {
@@ -205,6 +200,33 @@ impl<F: PrimeField, T: Transcript<F>, I: IOP<F>> Verifier<F, T, I, PerRegisterAR
 
             h_at_x.add_assign(&num);
         }
+
+        Ok(h_at_x)
+    }
+
+    fn simulate_h2_from_g_at_z (
+        &self,
+        natural_x_index: usize,
+        g_lde_domain: &Domain<F>,
+        g_lde_at_x: F,
+        z: F,
+        g_at_z: F
+    ) -> Result<F, SynthesisError> {
+        let x = g_lde_domain.generator.pow(&[natural_x_index as u64]);
+
+        // (g(x) - g(z)) / (x - z) = h_2(x)
+
+        let mut h_at_x = g_lde_at_x;
+        h_at_x.sub_assign(&g_at_z);
+
+        let mut den = x;
+        den.sub_assign(&z);
+
+        let den_inv = den.inverse().ok_or(
+            SynthesisError::DivisionByZero(format!("no inverse at z = {}", z))
+        )?;
+
+        h_at_x.mul_assign(&den_inv);
 
         Ok(h_at_x)
     }
@@ -561,11 +583,10 @@ fn test_fib_verifier() {
     }
 
     let z = verifier.transcript.get_challenge();
-    println!("Z for verifier = {}", z);
 
     let f_lde_domain = Domain::<Fr>::new_for_size(f_ldes[0].size() as u64).expect("some domain");
 
-    let h_at_x = verifier.simulate_h1_from_f_at_z(
+    let h_1_at_x = verifier.simulate_h1_from_f_at_z(
         verifier.transcript.clone(), 
         natural_x_index, 
         &f_lde_domain, 
@@ -573,10 +594,24 @@ fn test_fib_verifier() {
         z
     ).expect("some h_1 value");
 
-    assert_eq!(h_at_x, h1_lde.as_ref()[natural_x_index], "h_1 simulation failed");
+    assert_eq!(h_1_at_x, h1_lde.as_ref()[natural_x_index], "h_1 simulation failed");
 
     let g_at_z_from_verifier = verifier.calculate_g_at_z_from_f_at_z(z).expect("some g at z");
 
     assert_eq!(g_at_z, g_at_z_from_verifier, "g at z is not the same in prover and verifier");
+
+    let g_lde_domain = Domain::<Fr>::new_for_size(g_lde.size() as u64).expect("some domain");
+
+    let g_lde_at_x = g_lde.as_ref()[natural_x_index];
+
+    let h_2_at_x = verifier.simulate_h2_from_g_at_z(
+        natural_x_index, 
+        &g_lde_domain, 
+        g_lde_at_x,
+        z,
+        g_at_z_from_verifier
+    ).expect("some h_2 value");
+
+    assert_eq!(h_2_at_x, h2_lde.as_ref()[natural_x_index], "h_2 simulation failed");
 
 }
