@@ -19,16 +19,18 @@ impl<F: PrimeField> ALIInstance<F, PerRegisterARP> {
         g_lde: &Polynomial<F, Values>,
         transcript: &mut T,
         worker: &Worker
-    ) -> Result<(Polynomial<F, Values>, Polynomial<F, Values>), SynthesisError> {
+    ) -> Result<(Polynomial<F, Values>, Polynomial<F, Values>, Vec<F>, F), SynthesisError> {
         let z = transcript.get_challenge();
-        let alpha = transcript.get_challenge();
 
         let f_lde_size = (&f_ldes[0]).size();
         let g_lde_size = g_lde.size();
-        let mut divisors_for_masks: HashMap<StepDifference<F>, Polynomial<F, Values>> = HashMap::new();
+        let mut divisors_for_masks: IndexMap<StepDifference<F>, Polynomial<F, Values>> = IndexMap::new();
 
         let mut h1_lde = Polynomial::<F, Values>::new_for_size(f_lde_size)?;
-        // let mut h2_lde = Polynomial::<F, Values>::new_for_size(g_lde_size)?;
+
+        let mut f_at_z_m = vec![];
+
+        println!("All masks length = {}", self.all_masks.len());
 
         for m in self.all_masks.iter() {
             let mut root = match m.steps_difference {
@@ -51,6 +53,8 @@ impl<F: PrimeField> ALIInstance<F, PerRegisterARP> {
             };
 
             let witness_value_at_z = f_polys[reg_num].evaluate_at(&worker, root);
+
+            f_at_z_m.push(witness_value_at_z);
         
             let divisor = if let Some(d) = divisors_for_masks.get(&m.steps_difference) {
                 d
@@ -73,6 +77,8 @@ impl<F: PrimeField> ALIInstance<F, PerRegisterARP> {
             let mut minus_witness_value_at_z = witness_value_at_z;
             minus_witness_value_at_z.negate();
             f_minus_f_at_z.add_constant(&worker, &minus_witness_value_at_z);
+
+            let alpha = transcript.get_challenge();
 
             f_minus_f_at_z.scale(&worker, alpha);
             f_minus_f_at_z.mul_assign(&worker, divisor);
@@ -141,6 +147,6 @@ impl<F: PrimeField> ALIInstance<F, PerRegisterARP> {
         h2_lde.add_constant(&worker, &minus_g_at_z);
         h2_lde.mul_assign(&worker, &inverse_q_poly_coset_values);
 
-        Ok((h1_lde, h2_lde))
+        Ok((h1_lde, h2_lde, f_at_z_m, g_at_z))
     }
 }

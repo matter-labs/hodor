@@ -8,7 +8,13 @@ use crate::SynthesisError;
 use crate::domains::*;
 use crate::precomputations::*;
 use crate::transcript::Transcript;
-use std::collections::{HashMap, HashSet};
+
+use indexmap::IndexSet;
+use indexmap::IndexMap;
+
+// use std::collections::{IndexMap, IndexSet};
+
+use super::*;
 
 pub mod deep;
 
@@ -17,41 +23,13 @@ pub struct ALIInstance<F: PrimeField, T: ARPType> {
     pub max_constraint_power: u64,
     pub column_domain: Domain::<F>,
     pub constraints_domain: Domain::<F>,
-    pub all_masks: HashSet::<MaskProperties<F>>,
-    pub all_boundary_constrained_registers: HashSet::<Register>,
-    pub constraint_divisors: HashMap::<ConstraintDensity, Polynomial<F, Values>>,
-    pub boundary_constraint_divisors: HashMap::<u64, Polynomial<F, Values>>,
-    pub constraints_batched_by_density: HashMap::< ConstraintDensity, Vec<Constraint<F>> >,
+    pub(crate) all_masks: IndexSet::<MaskProperties<F>>,
+    pub all_boundary_constrained_registers: IndexSet::<Register>,
+    pub constraint_divisors: IndexMap::<ConstraintDensity, Polynomial<F, Values>>,
+    pub boundary_constraint_divisors: IndexMap::<u64, Polynomial<F, Values>>,
+    pub constraints_batched_by_density: IndexMap::< ConstraintDensity, Vec<Constraint<F>> >,
     pub precomputations: PrecomputedOmegas<F>,
     _marker: std::marker::PhantomData<T>
-}
-
-#[derive(Clone, PartialEq, Eq, Debug)]
-pub struct MaskProperties<F: PrimeField> {
-    pub register: Register,
-    pub steps_difference: StepDifference<F>
-}
-
-impl<F: PrimeField> std::hash::Hash for MaskProperties<F> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.register.hash(state);
-        self.steps_difference.hash(state);
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct WitnessEvaluationData<F: PrimeField> {
-    mask: MaskProperties<F>,
-    power: u64,
-    total_lde_length: u64
-}
-
-impl<F: PrimeField> std::hash::Hash for WitnessEvaluationData<F> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.mask.hash(state);
-        self.power.hash(state);
-        self.total_lde_length.hash(state);
-    }
 }
 
 impl<F: PrimeField> ALIInstance<F, PerRegisterARP> {
@@ -72,44 +50,7 @@ impl<F: PrimeField> ALIInstance<F, PerRegisterARP> {
         let constraints_domain = Domain::<F>::new_for_size(column_domain.size * max_constraint_power)?;
         let precomputed_omegas = PrecomputedOmegas::new_for_domain(&constraints_domain, &worker);
 
-        let mut all_masks: HashSet::<MaskProperties<F>> = HashSet::new();
-
-        fn get_masks_from_constraint<F: PrimeField>(
-            set: &mut HashSet<MaskProperties<F>>,
-            constraint: &Constraint<F>
-        ) {
-            for t in constraint.terms.iter() {
-                get_masks_from_term(set, t);
-            }
-        }
-
-        fn get_masks_from_term<F: PrimeField>(
-            set: &mut HashSet<MaskProperties<F>>,
-            constraint: &ConstraintTerm<F>
-        ) {
-            match constraint {
-                ConstraintTerm::Univariate(uni) => {
-                    let steps_difference = uni.steps_difference;
-                    let register = uni.register;
-                    let props = MaskProperties::<F> {
-                        register: register,
-                        steps_difference: steps_difference
-                    };
-                    set.insert(props);
-                },
-                ConstraintTerm::Polyvariate(poly) => {
-                    for t in poly.terms.iter() {
-                        let steps_difference = t.steps_difference;
-                        let register = t.register;
-                        let props = MaskProperties::<F> {
-                            register: register,
-                            steps_difference: steps_difference
-                        };
-                        set.insert(props);
-                    }
-                },
-            }
-        }
+        let mut all_masks: IndexSet::<MaskProperties<F>> = IndexSet::new();
 
         for c in arp.properties.constraints.iter() {
             get_masks_from_constraint(&mut all_masks, c);
@@ -220,7 +161,7 @@ impl<F: PrimeField> ALIInstance<F, PerRegisterARP> {
             Ok((inverse_divisors, divisor_degree))
         }
 
-        let mut constraints_batched_by_density: HashMap::< ConstraintDensity, Vec<Constraint<F>> > = HashMap::new();
+        let mut constraints_batched_by_density: IndexMap::< ConstraintDensity, Vec<Constraint<F>> > = IndexMap::new();
 
         for constraint in arp.properties.constraints.iter() {
             if let Some(batch) = constraints_batched_by_density.get_mut(&constraint.density) {
@@ -230,7 +171,7 @@ impl<F: PrimeField> ALIInstance<F, PerRegisterARP> {
             }
         }
 
-        let mut inverse_divisors_per_constraint_density: HashMap::<ConstraintDensity, Polynomial<F, Values>> = HashMap::new();
+        let mut inverse_divisors_per_constraint_density: IndexMap::<ConstraintDensity, Polynomial<F, Values>> = IndexMap::new();
 
         for (density, _) in constraints_batched_by_density.iter() {
             match density {
@@ -250,7 +191,7 @@ impl<F: PrimeField> ALIInstance<F, PerRegisterARP> {
             }
         }
 
-        let mut all_boundary_constrained_registers: HashSet::<Register> = HashSet::new();
+        let mut all_boundary_constrained_registers: IndexSet::<Register> = IndexSet::new();
 
         for b_c in arp.properties.boundary_constraints.iter() {
             if all_boundary_constrained_registers.get(&b_c.register).is_none() {
@@ -258,23 +199,24 @@ impl<F: PrimeField> ALIInstance<F, PerRegisterARP> {
             }
         }
 
-        let mut boundary_constraint_divisors: HashMap::<u64, Polynomial<F, Values>> = HashMap::new();
+        let mut boundary_constraint_divisors: IndexMap::<u64, Polynomial<F, Values>> = IndexMap::new();
 
-        let mut all_boundary_constraint_steps: HashSet<usize> = HashSet::new();
+        let mut all_boundary_constraint_steps: IndexSet<usize> = IndexSet::new();
 
         for b_c in arp.properties.boundary_constraints.iter() {
+            get_mask_from_boundary_constraint(&mut all_masks, b_c);
+
             if all_boundary_constraint_steps.get(&b_c.at_row).is_none() {
                 all_boundary_constraint_steps.insert(b_c.at_row);
             }
         }
-
-        // let boundary_constraint_lde_factor = constraints_domain.size / 2;
 
         for row in all_boundary_constraint_steps.into_iter() {
             // precompute divisors
             let mut q_poly = Polynomial::<F, Coefficients>::new_for_size(2)?;
             q_poly.as_mut()[1] = F::one();
             let root = column_domain.generator.pow([row as u64]);
+            println!("Root for boundary constraint = {}", root);
             q_poly.as_mut()[0].sub_assign(&root);
             let mut inverse_q_poly_coset_values = q_poly.coset_evaluate_at_domain_for_degree_one(
                 &worker, 
@@ -332,7 +274,7 @@ impl<F: PrimeField> ALIInstance<F, PerRegisterARP> {
         
         // first mask all the registers
 
-        let mut mask_applied_polynomials = HashMap::<MaskProperties<F>, Polynomial<F, Coefficients>, _>::new();
+        let mut mask_applied_polynomials = IndexMap::<MaskProperties<F>, Polynomial<F, Coefficients>, _>::new();
 
         for m in self.all_masks.iter() {
             let register_number = match m.register {
@@ -369,8 +311,8 @@ impl<F: PrimeField> ALIInstance<F, PerRegisterARP> {
         // returns constraint evaluated in the coset
         fn evaluate_constraint_term_into_values<F: PrimeField>(
             term: &ConstraintTerm<F>,
-            substituted_witness: &HashMap::<MaskProperties<F>, Polynomial<F, Coefficients>>,
-            evaluated_univariate_terms: &mut HashMap::<WitnessEvaluationData<F>, Polynomial<F, Values>>,
+            substituted_witness: &IndexMap::<MaskProperties<F>, Polynomial<F, Coefficients>>,
+            evaluated_univariate_terms: &mut IndexMap::<WitnessEvaluationData<F>, Polynomial<F, Values>>,
             power_hint: u64,
             worker: &Worker
         ) -> Result<Polynomial<F, Values>, SynthesisError>
@@ -421,8 +363,8 @@ impl<F: PrimeField> ALIInstance<F, PerRegisterARP> {
         // returns univariate term evaluated at coset
         fn evaluate_univariate_term_into_values<F: PrimeField>(
             uni: &UnivariateTerm<F>,
-            substituted_witness: &HashMap::<MaskProperties<F>, Polynomial<F, Coefficients>>,
-            evaluated_univariate_terms: &mut HashMap::<WitnessEvaluationData<F>, Polynomial<F, Values>>,
+            substituted_witness: &IndexMap::<MaskProperties<F>, Polynomial<F, Coefficients>>,
+            evaluated_univariate_terms: &mut IndexMap::<WitnessEvaluationData<F>, Polynomial<F, Values>>,
             power_hint: u64,
             worker: &Worker
         ) -> Result<Polynomial<F, Values>, SynthesisError>
@@ -478,8 +420,8 @@ impl<F: PrimeField> ALIInstance<F, PerRegisterARP> {
             Ok(base)
         }
 
-        let mut evaluated_terms_map: HashMap::<WitnessEvaluationData<F>, Polynomial<F, Values>> = HashMap::new();
-
+        let mut evaluated_terms_map: IndexMap::<WitnessEvaluationData<F>, Polynomial<F, Values>> = IndexMap::new();
+        println!("Constraints by density len = {:?}", self.constraints_batched_by_density.len());
         // now evaluate normal constraints
         for (density, batch) in self.constraints_batched_by_density.iter() {
             let mut batch_values = g_values.clone();
@@ -538,6 +480,7 @@ impl<F: PrimeField> ALIInstance<F, PerRegisterARP> {
         let boundary_lde_factor = self.max_constraint_power;
 
         // now evaluate normal constraints
+        println!("Boundary constraints len = {:?}", self.properties.boundary_constraints.len());
         for b_c in self.properties.boundary_constraints.iter() {
             let alpha = transcript.get_challenge();
             let beta = transcript.get_challenge();

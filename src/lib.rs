@@ -5,6 +5,7 @@ extern crate byteorder;
 extern crate rand;
 extern crate hex;
 extern crate tiny_keccak;
+extern crate indexmap;
 extern crate crypto;
 extern crate blake2b_simd;
 extern crate blake2s_simd;
@@ -22,6 +23,7 @@ pub mod ali;
 pub mod iop;
 pub mod transcript;
 pub mod precomputations;
+pub mod verifier;
 
 mod experiments;
 

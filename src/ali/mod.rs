@@ -1,4 +1,5 @@
 use ff::PrimeField;
+
 use crate::polynomials::*;
 use crate::arp::*;
 use crate::air::*;
@@ -6,13 +7,92 @@ use crate::fft::multicore::Worker;
 use crate::SynthesisError;
 use crate::domains::*;
 
+use indexmap::IndexSet;
+
 pub mod per_register;
+
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub(crate) struct MaskProperties<F: PrimeField> {
+    pub register: Register,
+    pub steps_difference: StepDifference<F>
+}
+
+impl<F: PrimeField> std::hash::Hash for MaskProperties<F> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.register.hash(state);
+        self.steps_difference.hash(state);
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct WitnessEvaluationData<F: PrimeField> {
+    mask: MaskProperties<F>,
+    power: u64,
+    total_lde_length: u64
+}
+
+impl<F: PrimeField> std::hash::Hash for WitnessEvaluationData<F> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.mask.hash(state);
+        self.power.hash(state);
+        self.total_lde_length.hash(state);
+    }
+}
+
+pub(crate) fn get_masks_from_constraint<F: PrimeField>(
+    set: &mut IndexSet<MaskProperties<F>>,
+    constraint: &Constraint<F>
+) {
+    for t in constraint.terms.iter() {
+        get_masks_from_term(set, t);
+    }
+}
+
+pub(crate) fn get_mask_from_boundary_constraint<F: PrimeField>(
+    set: &mut IndexSet<MaskProperties<F>>,
+    b_constraint: &BoundaryConstraint<F>
+) {
+    let props = MaskProperties::<F> {
+        register: b_constraint.register,
+        steps_difference: StepDifference::Mask(F::one())
+    };
+
+    set.insert(props);
+}
+
+pub(crate) fn get_masks_from_term<F: PrimeField>(
+    set: &mut IndexSet<MaskProperties<F>>,
+    constraint: &ConstraintTerm<F>
+) {
+    match constraint {
+        ConstraintTerm::Univariate(uni) => {
+            let steps_difference = uni.steps_difference;
+            let register = uni.register;
+            let props = MaskProperties::<F> {
+                register: register,
+                steps_difference: steps_difference
+            };
+            set.insert(props);
+        },
+        ConstraintTerm::Polyvariate(poly) => {
+            for t in poly.terms.iter() {
+                let steps_difference = t.steps_difference;
+                let register = t.register;
+                let props = MaskProperties::<F> {
+                    register: register,
+                    steps_difference: steps_difference
+                };
+                set.insert(props);
+            }
+        },
+    }
+}
 
 // pub mod deep_ali;
 
 // pub use self::deep_ali::*;
 
-// use std::collections::{HashMap, HashSet};
+// use std::collections::{IndexMap, IndexSet};
 
 // // ARP works with remapped registers and no longer cares about their meaning
 // #[derive(Debug)]
@@ -24,8 +104,8 @@ pub mod per_register;
 //     pub max_constraint_power: usize,
 //     pub constraints: Vec<Constraint<F>>,
 //     pub boundary_constraints: Vec<BoundaryConstraint<F>>,
-//     pub mask_applied_polynomials: HashMap::<StepDifference<F>, Polynomial<F, Coefficients>>,
-//     pub inversed_divisors_in_cosets: HashMap::<ConstraintDensity, Polynomial<F, Values>>,
+//     pub mask_applied_polynomials: IndexMap::<StepDifference<F>, Polynomial<F, Coefficients>>,
+//     pub inversed_divisors_in_cosets: IndexMap::<ConstraintDensity, Polynomial<F, Values>>,
 //     pub column_domain: Domain::<F>,
 //     pub full_trace_domain: Domain::<F>
 // }
@@ -55,11 +135,11 @@ pub mod per_register;
 //         }
 
 //         // perform masking substitutions first 
-//         let mut all_masks = HashSet::<StepDifference<F>, _>::new();
-//         let mut mask_applied_polynomials = HashMap::<StepDifference<F>, Polynomial<F, Coefficients>, _>::new();
+//         let mut all_masks = IndexSet::<StepDifference<F>, _>::new();
+//         let mut mask_applied_polynomials = IndexMap::<StepDifference<F>, Polynomial<F, Coefficients>, _>::new();
 
 //         fn get_masks_from_constraint<F: PrimeField>(
-//             set: &mut HashSet<StepDifference<F>>,
+//             set: &mut IndexSet<StepDifference<F>>,
 //             constraint: &Constraint<F>
 //         ) {
 //             for t in constraint.terms.iter() {
@@ -68,7 +148,7 @@ pub mod per_register;
 //         }
 
 //         fn get_masks_from_term<F: PrimeField>(
-//             set: &mut HashSet<StepDifference<F>>,
+//             set: &mut IndexSet<StepDifference<F>>,
 //             constraint: &ConstraintTerm<F>
 //         ) {
 //             match constraint {
@@ -144,7 +224,7 @@ pub mod per_register;
 //             max_constraint_power: max_constraint_power as usize,
 //             boundary_constraints: arp.boundary_constraints,
 //             mask_applied_polynomials: mask_applied_polynomials,
-//             inversed_divisors_in_cosets: HashMap::new(),
+//             inversed_divisors_in_cosets: IndexMap::new(),
 //             column_domain,
 //             full_trace_domain
 //         }
@@ -158,8 +238,8 @@ pub mod per_register;
 //         // returns constraint evaluated in the coset
 //         fn evaluate_constraint_term_into_values<F: PrimeField>(
 //             term: &ConstraintTerm<F>,
-//             substituted_witness: &HashMap::<StepDifference<F>, Polynomial<F, Coefficients>>,
-//             evaluated_univariate_terms: &mut HashMap::<WitnessEvaluationData<F>, Polynomial<F, Values>>,
+//             substituted_witness: &IndexMap::<StepDifference<F>, Polynomial<F, Coefficients>>,
+//             evaluated_univariate_terms: &mut IndexMap::<WitnessEvaluationData<F>, Polynomial<F, Values>>,
 //             power_hint: u64,
 //             worker: &Worker
 //         ) -> Result<Polynomial<F, Values>, SynthesisError>
@@ -210,8 +290,8 @@ pub mod per_register;
 //         // returns univariate term evaluated at coset
 //         fn evaluate_univariate_term_into_values<F: PrimeField>(
 //             uni: &UnivariateTerm<F>,
-//             substituted_witness: &HashMap::<StepDifference<F>, Polynomial<F, Coefficients>>,
-//             evaluated_univariate_terms: &mut HashMap::<WitnessEvaluationData<F>, Polynomial<F, Values>>,
+//             substituted_witness: &IndexMap::<StepDifference<F>, Polynomial<F, Coefficients>>,
+//             evaluated_univariate_terms: &mut IndexMap::<WitnessEvaluationData<F>, Polynomial<F, Values>>,
 //             power_hint: u64,
 //             worker: &Worker
 //         ) -> Result<Polynomial<F, Values>, SynthesisError>
@@ -354,7 +434,7 @@ pub mod per_register;
 //         // TODO: Check what strategy is better
 //         fn evaluate_boundary_constraint_into_coeffs<F: PrimeField>(
 //             b_constraint: &BoundaryConstraint<F>,
-//             substituted_witness: &HashMap::<StepDifference<F>, Polynomial<F, Coefficients>>
+//             substituted_witness: &IndexMap::<StepDifference<F>, Polynomial<F, Coefficients>>
 //         ) -> Result<Polynomial<F, Coefficients>, SynthesisError>
 //         {
 //             let boundary_constraint_mask = StepDifference::Mask(F::one());
@@ -366,7 +446,7 @@ pub mod per_register;
 
 //         // fn evaluate_boundary_constraint_into_values<F: PrimeField>(
 //         //     b_constraint: &BoundaryConstraint<F>,
-//         //     substituted_witness: &HashMap::<StepDifference<F>, Polynomial<F, Coefficients>>,
+//         //     substituted_witness: &IndexMap::<StepDifference<F>, Polynomial<F, Coefficients>>,
 //         //     power_hint: u64,
 //         //     alpha: &F,
 //         //     beta: &F,
@@ -398,12 +478,12 @@ pub mod per_register;
 //         let subterm_domain = Domain::new_for_size(subterm_coefficients.size() as u64)?;
 //         let subterm_values = Polynomial::<F, Values>::new_for_size(g_size)?;
 
-//         let mut evaluated_terms_map: HashMap::<WitnessEvaluationData<F>, Polynomial<F, Values>> = HashMap::new();
+//         let mut evaluated_terms_map: IndexMap::<WitnessEvaluationData<F>, Polynomial<F, Values>> = IndexMap::new();
 
 //         // one may optimize and save on muptiplications for the most expected case when constraints 
 //         // all have the same density
 
-//         let mut constraints_batched_by_density: HashMap::< ConstraintDensity, Vec<Constraint<F>> > = HashMap::new();
+//         let mut constraints_batched_by_density: IndexMap::< ConstraintDensity, Vec<Constraint<F>> > = IndexMap::new();
 
 //         for constraint in self.constraints.iter() {
 //             if let Some(batch) = constraints_batched_by_density.get_mut(&constraint.density) {

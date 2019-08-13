@@ -197,11 +197,11 @@ fn try_prove_quadratic_vdf() {
 
     let start = Instant::now();
     let g_oracle = Blake2sIopTree::create(g_lde.as_ref());
-    let z = g_oracle.get_challenge_scalar_from_root();
+    transcript.commit_bytes(&g_oracle.get_root());
     println!("G oracle is done after {} ms", start.elapsed().as_millis());
 
     let start = Instant::now();
-    let (h1_lde, h2_lde) = ali.calculate_deep(
+    let (h1_lde, h2_lde, _, _) = ali.calculate_deep(
         &witness_polys,
         &f_ldes,
         &g_poly_interpolant,

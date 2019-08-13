@@ -336,7 +336,7 @@ fn try_prove_cubic_vdf() {
     println!("G oracle is done after {} ms", start.elapsed().as_millis());
 
     let start = Instant::now();
-    let (h1_lde, h2_lde) = ali.calculate_deep(
+    let (h1_lde, h2_lde, _, _) = ali.calculate_deep(
         &witness_polys,
         &f_ldes,
         &g_poly_interpolant,

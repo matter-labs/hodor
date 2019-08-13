@@ -8,6 +8,7 @@ use ff::PrimeField;
 // mod single_witness;
 mod per_register;
 mod density_query;
+pub(crate) mod mappings;
 
 pub trait IntoARP<F: PrimeField> {
     // return full trace, trace constraints and boundary constraints

@@ -21,7 +21,7 @@ pub trait HashEncoder<F: PrimeField> {
 }
 
 pub trait IopTreeHasher<F: PrimeField> {
-    type HashOutput;
+    type HashOutput: AsRef<[u8]>;
     type LeafEncoder: LeafEncoder<F> + HashEncoder<F>; 
 
     fn hash_leaf(value: &F) -> Self::HashOutput;

@@ -52,8 +52,8 @@ impl<T: GetBytes + Default, H: TreeHasher> SparseMerkleTree<T, H>
 {
 
     pub fn new(tree_depth: Depth) -> Self {
-        let items = HashMap::new();
-        let hashes = HashMap::new();
+        let items = IndexMap::new();
+        let hashes = IndexMap::new();
         // we need to make sparse hashes for tree depth levels
         let mut prehashed = Vec::with_capacity((tree_depth + 1) as usize);
         let mut cur = H::hash_leaf(&T::default().be_bytes());

@@ -302,6 +302,7 @@ impl SqrtField for Fq2 {
             let mut b_squared = b;
             b_squared.square();
 
+            // TODO: Implement Frobenius map
             let b_in_q = b.pow(Fq::char());
 
             let mut b_in_q_by_b = b_in_q;
@@ -492,11 +493,16 @@ fn test_square_root() {
 
 #[test]
 fn test_bench_square_root() {
+    use ff::PrimeField;
     use rand::{XorShiftRng, SeedableRng};
     let mut rng = XorShiftRng::from_seed([0x5dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
 
     // const NUM_ROUNDS: usize = (1 << 20) - 1;
     const NUM_ROUNDS: usize = (1 << 18) - 1;
+
+    let k0 = Fq::from_str("3").unwrap();
+    let k1 = Fq::from_str("5").unwrap();
+
     let mut qr = Fq2::zero();
     for _ in 0..1000 {
         let a = Fq2::rand(&mut rng);
@@ -509,9 +515,38 @@ fn test_bench_square_root() {
     let now = std::time::Instant::now();
 
     for _ in 0..NUM_ROUNDS {
-        let sqrt = qr.sqrt();
+        let mut sqrt = qr.sqrt();
+        if sqrt.is_none() {
+            qr.negate();
+            sqrt = qr.sqrt();
+        }
         assert!(sqrt.is_some());
+        let sqrt = sqrt.unwrap();
+        qr = sqrt;
+
+        // qr.c0 = sqrt.c1;
+        // qr.c0.add_assign(&k0);
+
+        // qr.c1 = sqrt.c0;
+        // qr.c1.add_assign(&k1);
     }
 
     println!("{} square root calculations taken {}ms", NUM_ROUNDS, now.elapsed().as_millis());
 }
+
+#[test]
+fn test_non_redisue() {
+    let non_res = NON_RESIDUE;
+    println!("Non-residue = {}", non_res);
+    let non_res_sqrt = non_res.sqrt();
+    assert!(non_res_sqrt.is_none());
+}
+
+#[test]
+fn test_minus_one() {
+    let non_res = MINUS_ONE;
+    println!("Minus one = {}", non_res);
+    let non_res_sqrt = non_res.sqrt();
+    assert!(non_res_sqrt.is_some());
+}
+
