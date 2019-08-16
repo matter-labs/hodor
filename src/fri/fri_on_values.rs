@@ -5,15 +5,15 @@ use crate::fft::multicore::*;
 use crate::SynthesisError;
 use crate::utils::*;
 
-use super::{FRIIOP, FRIProof};
+use super::*;
 
-impl<'a, F: PrimeField, I: IOP<'a, F>> FRIIOP<'a, F, I> {
+impl<'a, F: PrimeField, I: IOP<'a, F>> NaiveFriIop<'a, F, I> {
     pub fn proof_from_lde_by_values(
         lde_values: &'a Polynomial<F, Values>, 
         lde_factor: usize,
         output_coeffs_at_degree_plus_one: usize,
         worker: &Worker
-    ) -> Result<FRIProof<'a, F, I>, SynthesisError> {
+    ) -> Result<FRIProofPrototype<'a, F, I>, SynthesisError> {
         let l0_commitment: I = I::create(lde_values.as_ref());
         let initial_domain_size = lde_values.size();
         let precomputation_size = initial_domain_size/2;
@@ -56,6 +56,8 @@ impl<'a, F: PrimeField, I: IOP<'a, F>> FRIIOP<'a, F, I> {
         let mut values_slice = lde_values.as_ref();
 
         let omegas_inv_ref: &[F] = omegas_inv.as_ref();
+
+        let mut roots = vec![];
         
         for _ in 0..num_steps {
             let mut next_values = vec![F::zero(); next_domain_size];
@@ -99,6 +101,8 @@ impl<'a, F: PrimeField, I: IOP<'a, F>> FRIIOP<'a, F, I> {
         });
 
         let intermediate_iop = I::create(next_values.as_ref());
+        let root = intermediate_iop.get_root();
+        roots.push(root);
         next_domain_challenge = intermediate_iop.get_challenge_scalar_from_root();
         intermediate_challenges.push(next_domain_challenge);
         next_domain_size /= 2;
@@ -111,7 +115,10 @@ impl<'a, F: PrimeField, I: IOP<'a, F>> FRIIOP<'a, F, I> {
         values_slice = intermediate_values.last().expect("is something").as_ref();
     }
 
+    // final challenge is not necessary
     intermediate_challenges.pop().expect("will work");
+
+    let final_root = roots.pop().expect("will work");
 
     assert!(intermediate_challenges.len() == num_steps);
     assert!(intermediate_commitments.len() == num_steps);
@@ -137,11 +144,12 @@ impl<'a, F: PrimeField, I: IOP<'a, F>> FRIIOP<'a, F, I> {
 
     // println!("Degree = {}", degree_plus_one);
 
-    Ok(FRIProof {
+    Ok(FRIProofPrototype {
         l0_commitment,
         intermediate_commitments,
         intermediate_values,
         intermediate_challenges,
+        final_root,
         final_coefficients: final_poly_coeffs,
         initial_degree_plus_one,
         output_coeffs_at_degree_plus_one,

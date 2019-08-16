@@ -37,15 +37,16 @@ pub trait IopTree<'a, F: PrimeField> {
     // fn create_from_combiner(combiner: &'a Self::Combiner) -> Self;
     fn size(&self) -> u64;
     fn get_root(&self) -> <Self::Hasher as IopTreeHasher<F>>::HashOutput;
+    fn encode_root_into_challenge(root: & <Self::Hasher as IopTreeHasher<F>>::HashOutput) -> F;
     fn get_challenge_scalar_from_root(&self) -> F;
-    fn verify(root: &<Self::Hasher as IopTreeHasher<F>>::HashOutput, leaf_value: &F, path: &[<Self::Hasher as IopTreeHasher<F>>::HashOutput], index: u64) -> bool;
-    fn get_path<'l>(&self, index: u64, leafs_values: &'l [F]) -> Vec< <Self::Hasher as IopTreeHasher<F>>::HashOutput > where 'l: 'a;
+    fn verify(root: &<Self::Hasher as IopTreeHasher<F>>::HashOutput, leaf_value: &F, path: &[<Self::Hasher as IopTreeHasher<F>>::HashOutput], index: usize) -> bool;
+    fn get_path<'l>(&self, index: usize, leafs_values: &'l [F]) -> Vec< <Self::Hasher as IopTreeHasher<F>>::HashOutput > where 'l: 'a;
 }
 
 pub trait IopQuery<F: PrimeField> {
     type Hasher: IopTreeHasher<F>;
 
-    fn index(&self) -> u64;
+    fn index(&self) -> usize;
     fn value(&self) -> F;
     fn path(&self) ->  &[<Self::Hasher as IopTreeHasher<F>>::HashOutput];
 }
@@ -58,9 +59,10 @@ pub trait IOP<'i, F: PrimeField> {
     fn create<'l>(leafs: &'l [F]) -> Self;
     fn combine<'l>(leafs: &'l [F]) -> Self::Combiner where 'l: 'i;
     fn get_root(&self) -> < <Self::Tree as IopTree<'i, F> >::Hasher as IopTreeHasher<F>>::HashOutput;
+    fn encode_root_into_challenge(root: & < <Self::Tree as IopTree<'i, F> >::Hasher as IopTreeHasher<F>>::HashOutput) -> F;
     fn get_challenge_scalar_from_root(&self) -> F;
     fn verify_query(query: &Self::Query, root: &< <Self::Tree as IopTree<'i, F> >::Hasher as IopTreeHasher<F>>::HashOutput) -> bool;
-    fn query(&self, index: u64, leafs: &[F]) -> Self::Query;
+    fn query(&self, index: usize, leafs: &[F]) -> Self::Query;
 }
 
 fn log2_floor(num: usize) -> u32 {

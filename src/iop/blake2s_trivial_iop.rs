@@ -223,17 +223,21 @@ impl<'a, F: PrimeField> IopTree<'a, F> for Blake2sIopTree<F> {
         self.nodes[1]
     }
 
-    fn get_challenge_scalar_from_root(&self) -> F {
-        let root = self.get_root();
-
+    fn encode_root_into_challenge(root: & <Self::Hasher as IopTreeHasher<F>>::HashOutput) -> F {
         < <Self::Hasher as IopTreeHasher<F> >::LeafEncoder as HashEncoder<F> >::interpret_hash(&root)
     }
 
-    fn verify(root: &<Self::Hasher as IopTreeHasher<F>>::HashOutput, leaf_value: &F, path: &[<Self::Hasher as IopTreeHasher<F>>::HashOutput], index: u64) -> bool {
+    fn get_challenge_scalar_from_root(&self) -> F {
+        let root = self.get_root();
+
+        Self::encode_root_into_challenge(&root)
+    }
+
+    fn verify(root: &<Self::Hasher as IopTreeHasher<F>>::HashOutput, leaf_value: &F, path: &[<Self::Hasher as IopTreeHasher<F>>::HashOutput], index: usize) -> bool {
         let mut hash = <Self::Hasher as IopTreeHasher<F>>::hash_leaf(&leaf_value);
         let mut idx = index;
         for el in path.iter() {
-            if idx & 1u64 == 0 {
+            if idx & 1usize == 0 {
                 hash = <Self::Hasher as IopTreeHasher<F>>::hash_node(&[hash, el.clone()], 0);
             } else {
                 hash = <Self::Hasher as IopTreeHasher<F>>::hash_node(&[el.clone(), hash], 0);
@@ -244,11 +248,11 @@ impl<'a, F: PrimeField> IopTree<'a, F> for Blake2sIopTree<F> {
         &hash == root
     }
 
-    fn get_path<'l>(&self, index: u64, leafs_values: &'l [F]) -> Vec< <Self::Hasher as IopTreeHasher<F>>::HashOutput > where 'l: 'a {
+    fn get_path<'l>(&self, index: usize, leafs_values: &'l [F]) -> Vec< <Self::Hasher as IopTreeHasher<F>>::HashOutput > where 'l: 'a {
         assert!(self.size == self.nodes.len() as u64);
         let mut nodes = &self.nodes[..];
 
-        let pair_index = index ^ 1u64;
+        let pair_index = index ^ 1usize;
 
         let mut path = vec![];
 
@@ -299,6 +303,10 @@ impl<'i, F: PrimeField> IOP<'i, F> for TrivialBlake2sIOP<F> {
         self.tree.get_root()
     }
 
+    fn encode_root_into_challenge(root: & < <Self::Tree as IopTree<'i, F> >::Hasher as IopTreeHasher<F>>::HashOutput) -> F {
+        <Self::Tree as IopTree<'i, F> >::encode_root_into_challenge(root)
+    }
+
     fn get_challenge_scalar_from_root(&self) -> F {
         self.tree.get_challenge_scalar_from_root()
     }
@@ -307,9 +315,9 @@ impl<'i, F: PrimeField> IOP<'i, F> for TrivialBlake2sIOP<F> {
         Self::Tree::verify(root, &query.value(), &query.path(), query.index())
     }
 
-    fn query(&self, index: u64, leafs: &[F]) -> Self::Query {
-        assert!(index < self.tree.size());
-        assert!(index < leafs.len() as u64);
+    fn query(&self, index: usize, leafs: &[F]) -> Self::Query {
+        assert!(index < self.tree.size() as usize);
+        assert!(index < leafs.len());
         let value = leafs[index as usize];
 
         let path = self.tree.get_path(index, leafs);
@@ -324,7 +332,7 @@ impl<'i, F: PrimeField> IOP<'i, F> for TrivialBlake2sIOP<F> {
 
 #[derive(Clone, Debug)]
 pub struct TrivialBlake2sIopQuery<F: PrimeField> {
-    index: u64,
+    index: usize,
     value: F,
     path: Vec<[u8; 32]>,
 }
@@ -332,7 +340,7 @@ pub struct TrivialBlake2sIopQuery<F: PrimeField> {
 impl<F: PrimeField> IopQuery<F> for TrivialBlake2sIopQuery<F> {
     type Hasher = Blake2sTreeHasher<F>;
 
-    fn index(&self) -> u64 {
+    fn index(&self) -> usize {
         self.index
     }
 
@@ -374,7 +382,7 @@ fn make_small_iop() {
     let iop = TrivialBlake2sIOP::create(&inputs);
     let root = iop.get_root();
     for i in 0..SIZE {
-        let query = iop.query(i as u64, &inputs);
+        let query = iop.query(i, &inputs);
         let valid = TrivialBlake2sIOP::verify_query(&query, &root);
         assert!(valid, "invalid query for leaf {}", i);
     }

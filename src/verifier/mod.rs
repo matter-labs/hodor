@@ -9,6 +9,7 @@ use crate::SynthesisError;
 use crate::air::*;
 use crate::ali::*;
 use crate::arp::mappings::*;
+use byteorder::{BigEndian, ByteOrder};
 
 use indexmap::IndexSet as IndexSet;
 use indexmap::IndexMap as IndexMap;
@@ -486,7 +487,7 @@ fn inverse_divisor_for_dense_constraint<F: PrimeField> (
 }
 
 #[test]
-fn test_fib_verifier() {
+fn test_fib_full_verifier() {
     use ff::Field;
     use crate::Fr;
     use crate::air::Fibonacci;
@@ -557,8 +558,55 @@ fn test_fib_verifier() {
         &worker
     ).expect("must work");
 
-    let h1_fri_proof = FRIIOP::<Fr, TrivialBlake2sIOP<Fr>>::proof_from_lde_by_values(&h1_lde, lde_factor, 1, &worker);
-    let h2_fri_proof = FRIIOP::<Fr, TrivialBlake2sIOP<Fr>>::proof_from_lde_by_values(&h2_lde, lde_factor, 1, &worker);
+    // type FriProver = NaiveFriIop::<'_, Fr, TrivialBlake2sIOP<Fr>>;
+    //  as FRIIOP<'_, Fr>;
+
+    let fri_final_poly_degree = 1;
+
+    let h1_fri_proof_proto = NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>::proof_from_lde(&h1_lde, lde_factor, fri_final_poly_degree, &worker).expect("must work");
+    let h2_fri_proof_proto = NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>::proof_from_lde(&h2_lde, lde_factor, fri_final_poly_degree, &worker).expect("must work");
+    
+    let challenge_root_h1 = h1_fri_proof_proto.final_root;
+
+    let h1_lde_size = h1_lde.size();
+
+    let natural_x_index = BigEndian::read_u64(&challenge_root_h1[(challenge_root_h1.len() - 8)..]);
+
+    let natural_x_index = natural_x_index as usize;
+    let mut natural_x_index_h1 = natural_x_index % h1_lde_size;
+    if natural_x_index_h1 % lde_factor == 0 {
+        natural_x_index_h1 += 1;
+        natural_x_index_h1 = natural_x_index_h1 % h1_lde_size;
+    }
+
+    if natural_x_index_h1 % 2 == 0 {
+        natural_x_index_h1 += 1;
+        natural_x_index_h1 = natural_x_index_h1 % h1_lde_size;
+    }
+
+    let h1_fri_proof = NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>::prototype_into_proof(h1_fri_proof_proto, &h1_lde, natural_x_index_h1).expect("must work");
+
+    let challenge_root_h2 = h2_fri_proof_proto.final_root;
+
+    let h2_lde_size = h2_lde.size();
+
+    let natural_x_index = BigEndian::read_u64(&challenge_root_h2[(challenge_root_h2.len() - 8)..]);
+
+    let natural_x_index = natural_x_index as usize;
+    let mut natural_x_index_h2 = natural_x_index % h2_lde_size;
+    if natural_x_index_h2 % lde_factor == 0 {
+        natural_x_index_h2 += 1;
+        natural_x_index_h2 = natural_x_index_h2 % h2_lde_size;
+    }
+
+    if natural_x_index_h2 % 2 == 0 {
+        natural_x_index_h2 += 1;
+        natural_x_index_h2 = natural_x_index_h2 % h2_lde_size;
+    }
+
+    let h2_fri_proof = NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>::prototype_into_proof(h2_fri_proof_proto, &h2_lde, natural_x_index_h2).expect("must work");
+
+    // All prover work is complete here 
 
     let mut f_roots = vec![];
 
@@ -575,11 +623,9 @@ fn test_fib_verifier() {
         g_root,
     ).expect("some verifier");
 
-    let natural_x_index = 1; // in LDE
-
     let mut f_ldes_at_x = vec![];
     for f in f_ldes.iter() {
-        f_ldes_at_x.push(f.as_ref()[natural_x_index]);
+        f_ldes_at_x.push(f.as_ref()[natural_x_index_h1]);
     }
 
     let z = verifier.transcript.get_challenge();
@@ -588,13 +634,13 @@ fn test_fib_verifier() {
 
     let h_1_at_x = verifier.simulate_h1_from_f_at_z(
         verifier.transcript.clone(), 
-        natural_x_index, 
+        natural_x_index_h1, 
         &f_lde_domain, 
         &f_ldes_at_x, 
         z
     ).expect("some h_1 value");
 
-    assert_eq!(h_1_at_x, h1_lde.as_ref()[natural_x_index], "h_1 simulation failed");
+    assert_eq!(h_1_at_x, h1_lde.as_ref()[natural_x_index_h1], "h_1 simulation failed");
 
     let g_at_z_from_verifier = verifier.calculate_g_at_z_from_f_at_z(z).expect("some g at z");
 
@@ -602,18 +648,33 @@ fn test_fib_verifier() {
 
     let g_lde_domain = Domain::<Fr>::new_for_size(g_lde.size() as u64).expect("some domain");
 
-    let g_lde_at_x = g_lde.as_ref()[natural_x_index];
+    let g_lde_at_x = g_lde.as_ref()[natural_x_index_h2];
 
     let h_2_at_x = verifier.simulate_h2_from_g_at_z(
-        natural_x_index, 
+        natural_x_index_h2, 
         &g_lde_domain, 
         g_lde_at_x,
         z,
         g_at_z_from_verifier
     ).expect("some h_2 value");
 
-    assert_eq!(h_2_at_x, h2_lde.as_ref()[natural_x_index], "h_2 simulation failed");
+    assert_eq!(h_2_at_x, h2_lde.as_ref()[natural_x_index_h2], "h_2 simulation failed");
 
     // Now we need to check that H1 and H2 are indeed low degree polynomials
 
+    let valid = <NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>> as FRIIOP<'_, Fr>>::verify_proof(
+        &h1_fri_proof,
+        natural_x_index_h1,
+        h_1_at_x
+    ).expect("must work");
+
+    assert!(valid);
+
+    let valid = <NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>> as FRIIOP<'_, Fr>>::verify_proof(
+        &h2_fri_proof,
+        natural_x_index_h2,
+        h_2_at_x
+    ).expect("must work");
+
+    assert!(valid);
 }

@@ -1,5 +1,5 @@
 use ff::PrimeField;
-use crate::iop::IOP;
+use crate::iop::*;
 use crate::polynomials::*;
 use crate::fft::multicore::*;
 use crate::SynthesisError;
@@ -7,17 +7,84 @@ use crate::utils::log2_floor;
 
 pub mod fri_on_values;
 pub mod verifier;
+pub mod query_producer;
 
-pub struct FRIIOP<'a, F: PrimeField, I: IOP<'a, F>> {
+pub trait FRIIOP<'a, F: PrimeField> {
+    const DEGREE: usize;
+
+    type IopType: IOP<'a, F>;
+    type ProofPrototype;
+    type Proof;
+
+    fn proof_from_lde(
+        lde_values: &'a Polynomial<F, Values>, 
+        lde_factor: usize,
+        output_coeffs_at_degree_plus_one: usize,
+        worker: &Worker
+    ) -> Result<Self::ProofPrototype, SynthesisError>;
+
+    fn prototype_into_proof(
+        prototype: Self::ProofPrototype,
+        iop_values: &'a Polynomial<F, Values>,
+        natural_first_element_index: usize,
+    ) -> Result<Self::Proof, SynthesisError>;
+
+    fn verify_proof(
+        proof: &'a Self::Proof,
+        natural_element_index: usize,
+        expected_value: F
+    ) -> Result<bool, SynthesisError>;
+}
+
+pub struct NaiveFriIop<'a, F: PrimeField, I: IOP<'a, F>> {
     _marker_f: std::marker::PhantomData<F>,
     _marker_i: std::marker::PhantomData<&'a I>
 }
 
-pub struct FRIProof<'a, F: PrimeField, I: IOP<'a, F>> {
+impl<'a, F: PrimeField, I: IOP<'a, F>> FRIIOP<'a, F> for NaiveFriIop<'a, F, I> {
+    const DEGREE: usize = 2;
+
+    type IopType = I;
+    type ProofPrototype = FRIProofPrototype<'a, F, I>;
+    type Proof = FRIProof<'a, F, I>;
+
+    fn proof_from_lde(
+        lde_values: &'a Polynomial<F, Values>, 
+        lde_factor: usize,
+        output_coeffs_at_degree_plus_one: usize,
+        worker: &Worker
+    ) -> Result<Self::ProofPrototype, SynthesisError> {
+        NaiveFriIop::proof_from_lde_by_values(
+            lde_values, 
+            lde_factor,
+            output_coeffs_at_degree_plus_one,
+            worker
+        )
+    }
+
+    fn prototype_into_proof(
+        prototype: Self::ProofPrototype,
+        iop_values: &'a Polynomial<F, Values>,
+        natural_first_element_index: usize,
+    ) -> Result<Self::Proof, SynthesisError> {
+        prototype.produce_proof(iop_values, natural_first_element_index)
+    }
+
+    fn verify_proof(
+        proof: &'a Self::Proof,
+        natural_element_index: usize,
+        expected_value: F
+    ) -> Result<bool, SynthesisError> {
+        Self::verify_proof_queries(proof, natural_element_index, Self::DEGREE, expected_value)
+    }
+}
+
+pub struct FRIProofPrototype<'a, F: PrimeField, I: IOP<'a, F>> {
     pub l0_commitment: I,
     pub intermediate_commitments: Vec<I>,
     pub intermediate_values: Vec< Polynomial<F, Values> >,
     pub intermediate_challenges: Vec<F>,
+    pub final_root: < <I::Tree as IopTree<'a, F> >::Hasher as IopTreeHasher<F>>::HashOutput,
     pub final_coefficients: Vec<F>,
     pub initial_degree_plus_one: usize,
     pub output_coeffs_at_degree_plus_one: usize,
@@ -25,13 +92,23 @@ pub struct FRIProof<'a, F: PrimeField, I: IOP<'a, F>> {
     _marker: std::marker::PhantomData<&'a I>
 }
 
-impl<'a, F: PrimeField, I: IOP<'a, F>> FRIIOP<'a, F, I> {
-    pub fn proof_from_lde(
+pub struct FRIProof<'a, F: PrimeField, I: IOP<'a, F>> {
+    pub queries: Vec< <I as IOP<'a, F> >::Query >,
+    pub roots: Vec< < <I::Tree as IopTree<'a, F> >::Hasher as IopTreeHasher<F>>::HashOutput>,
+    pub final_coefficients: Vec<F>,
+    pub initial_degree_plus_one: usize,
+    pub output_coeffs_at_degree_plus_one: usize,
+    pub lde_factor: usize,
+    _marker: std::marker::PhantomData<&'a I>
+}
+
+impl<'a, F: PrimeField, I: IOP<'a, F>> NaiveFriIop<'a, F, I> {
+    pub fn proof_from_lde_through_coefficients(
         lde_values: Polynomial<F, Values>, 
         lde_factor: usize,
         output_coeffs_at_degree_plus_one: usize,
         worker: &Worker
-    ) -> Result<FRIProof<'a, F, I>, SynthesisError> {
+    ) -> Result<FRIProofPrototype<'a, F, I>, SynthesisError> {
         let l0_commitment: I = I::create(lde_values.as_ref());
         let initial_domain_size = lde_values.size();
 
@@ -53,6 +130,7 @@ impl<'a, F: PrimeField, I: IOP<'a, F>> FRIIOP<'a, F, I> {
         let mut next_domain_size = initial_polynomial_coeffs.len() / 2;
 
         let mut coeffs = initial_polynomial_coeffs;
+        let mut roots = vec![];
         
         for _ in 0..num_steps {
             let mut next_coefficients = vec![F::zero(); next_domain_size];
@@ -78,6 +156,8 @@ impl<'a, F: PrimeField, I: IOP<'a, F>> FRIIOP<'a, F, I> {
         let next_coeffs_as_poly = Polynomial::from_coeffs(next_coefficients.clone())?;
         let next_values_as_poly = next_coeffs_as_poly.lde(&worker, lde_factor)?;
         let intermediate_iop = I::create(next_values_as_poly.as_ref());
+        let root = intermediate_iop.get_root();
+        roots.push(root);
         next_domain_challenge = intermediate_iop.get_challenge_scalar_from_root();
         intermediate_challenges.push(next_domain_challenge);
         next_domain_size /= 2;
@@ -89,6 +169,8 @@ impl<'a, F: PrimeField, I: IOP<'a, F>> FRIIOP<'a, F, I> {
     }
 
     intermediate_challenges.pop().expect("will work");
+
+    let final_root = roots.pop().expect("will work");
 
     assert!(intermediate_challenges.len() == num_steps);
     assert!(intermediate_commitments.len() == num_steps);
@@ -112,11 +194,12 @@ impl<'a, F: PrimeField, I: IOP<'a, F>> FRIIOP<'a, F, I> {
 
     // println!("Degree = {}", degree_plus_one);
 
-    Ok(FRIProof {
+    Ok(FRIProofPrototype {
         l0_commitment,
         intermediate_commitments,
         intermediate_values,
         intermediate_challenges,
+        final_root,
         final_coefficients: final_poly_coeffs,
         initial_degree_plus_one,
         output_coeffs_at_degree_plus_one,
@@ -202,83 +285,69 @@ fn test_fib_fri_iop_verifier() {
 
     let output_at_degree = 1;
 
-    let h1_fri_proof = FRIIOP::<Fr, TrivialBlake2sIOP<Fr>>::proof_from_lde_by_values(&h1_lde, lde_factor, output_at_degree, &worker).expect("must work");
-    let h2_fri_proof = FRIIOP::<Fr, TrivialBlake2sIOP<Fr>>::proof_from_lde_by_values(&h2_lde, lde_factor, 1, &worker).expect("must work");
+    let h1_fri_proof = NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>::proof_from_lde_by_values(&h1_lde, lde_factor, output_at_degree, &worker).expect("must work");
+    let h2_fri_proof = NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>::proof_from_lde_by_values(&h2_lde, lde_factor, output_at_degree, &worker).expect("must work");
 
     let natural_x_index = 1;
 
-    let valid = FRIIOP::<Fr, TrivialBlake2sIOP<Fr>>::verify(
-        &h1_fri_proof,
+    // {
+    //     let valid = NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>::verify_prototype(
+    //         &h1_fri_proof,
+    //         &h1_lde,
+    //         natural_x_index
+    //     ).expect("must work");
+
+    //     assert!(valid);
+    // }
+
+    // {
+    //     let valid = NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>::verify_prototype(
+    //         &h2_fri_proof,
+    //         &h2_lde,
+    //         natural_x_index
+    //     ).expect("must work");
+
+    //     assert!(valid);
+    // }
+
+    let proof_h1 = <NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>> as FRIIOP<'_, Fr>>::prototype_into_proof(
+        h1_fri_proof,
         &h1_lde,
         natural_x_index
     ).expect("must work");
 
-    assert!(valid);
+    let expected_value = h1_lde.as_ref()[natural_x_index];
 
-    let valid = FRIIOP::<Fr, TrivialBlake2sIOP<Fr>>::verify(
-        &h2_fri_proof,
-        &h2_lde,
-        natural_x_index
+    let valid = <NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>> as FRIIOP<'_, Fr>>::verify_proof(
+        &proof_h1,
+        natural_x_index,
+        expected_value
     ).expect("must work");
 
     assert!(valid);
 
+    let proof_h2 = <NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>> as FRIIOP<'_, Fr>>::prototype_into_proof(
+        h2_fri_proof,
+        &h2_lde,
+        natural_x_index
+    ).expect("must work");
 
+    let expected_value = h2_lde.as_ref()[natural_x_index];
 
-    // let mut f_roots = vec![];
+    let valid = <NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>> as FRIIOP<'_, Fr>>::verify_proof(
+        &proof_h2,
+        natural_x_index,
+        expected_value
+    ).expect("must work");
 
-    // for o in f_oracles.iter() {
-    //     f_roots.push(o.get_root());
-    // }
+    assert!(valid);
 
-    // let g_root = g_oracle.get_root();
+    let valid = <NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>> as FRIIOP<'_, Fr>>::verify_proof(
+        &proof_h1,
+        natural_x_index,
+        expected_value
+    ).expect("must work");
 
-    // let mut verifier = Verifier::<Fr, Blake2sTranscript<Fr>, TrivialBlake2sIOP<Fr>, PerRegisterARP>::new(
-    //     props, 
-    //     f_at_z_m,
-    //     f_roots,
-    //     g_root,
-    // ).expect("some verifier");
-
-    // let natural_x_index = 1; // in LDE
-
-    // let mut f_ldes_at_x = vec![];
-    // for f in f_ldes.iter() {
-    //     f_ldes_at_x.push(f.as_ref()[natural_x_index]);
-    // }
-
-    // let z = verifier.transcript.get_challenge();
-
-    // let f_lde_domain = Domain::<Fr>::new_for_size(f_ldes[0].size() as u64).expect("some domain");
-
-    // let h_1_at_x = verifier.simulate_h1_from_f_at_z(
-    //     verifier.transcript.clone(), 
-    //     natural_x_index, 
-    //     &f_lde_domain, 
-    //     &f_ldes_at_x, 
-    //     z
-    // ).expect("some h_1 value");
-
-    // assert_eq!(h_1_at_x, h1_lde.as_ref()[natural_x_index], "h_1 simulation failed");
-
-    // let g_at_z_from_verifier = verifier.calculate_g_at_z_from_f_at_z(z).expect("some g at z");
-
-    // assert_eq!(g_at_z, g_at_z_from_verifier, "g at z is not the same in prover and verifier");
-
-    // let g_lde_domain = Domain::<Fr>::new_for_size(g_lde.size() as u64).expect("some domain");
-
-    // let g_lde_at_x = g_lde.as_ref()[natural_x_index];
-
-    // let h_2_at_x = verifier.simulate_h2_from_g_at_z(
-    //     natural_x_index, 
-    //     &g_lde_domain, 
-    //     g_lde_at_x,
-    //     z,
-    //     g_at_z_from_verifier
-    // ).expect("some h_2 value");
-
-    // assert_eq!(h_2_at_x, h2_lde.as_ref()[natural_x_index], "h_2 simulation failed");
-
-    // Now we need to check that H1 and H2 are indeed low degree polynomials
+    assert!(!valid);
 
 }
