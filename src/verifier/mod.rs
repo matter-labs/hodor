@@ -14,7 +14,7 @@ use indexmap::IndexSet as IndexSet;
 use indexmap::IndexMap as IndexMap;
 // use std::collections::{IndexSet, IndexMap};
 
-pub struct Verifier<F: PrimeField, T: Transcript<F>, I: IOP<F>, A: ARPType> {
+pub struct Verifier<'a, F: PrimeField, T: Transcript<F>, I: IOP<'a, F>, A: ARPType> {
     instance: InstanceProperties<F>,
     max_constraint_power: u64,
     column_domain: Domain::<F>,
@@ -24,20 +24,20 @@ pub struct Verifier<F: PrimeField, T: Transcript<F>, I: IOP<F>, A: ARPType> {
     all_boundary_constrained_registers: IndexSet::<Register>,
     constraints_batched_by_density: IndexMap::< ConstraintDensity, Vec<Constraint<F>> >,
     transcript: T,
-    f_iop_roots: Vec< < <I::Tree as IopTree<F> >::Hasher as IopTreeHasher<F>>::HashOutput >,
-    g_iop_root: < <I::Tree as IopTree<F> >::Hasher as IopTreeHasher<F>>::HashOutput,
+    f_iop_roots: Vec< < <I::Tree as IopTree<'a, F> >::Hasher as IopTreeHasher<F>>::HashOutput >,
+    g_iop_root: < <I::Tree as IopTree<'a, F> >::Hasher as IopTreeHasher<F>>::HashOutput,
     constraint_challenges: Vec<(F, F)>,
     boundary_constraint_challenges: Vec<(F, F)>,
 
     _marker: std::marker::PhantomData<A>
 }
 
-impl<F: PrimeField, T: Transcript<F>, I: IOP<F>> Verifier<F, T, I, PerRegisterARP> {
+impl<'a, F: PrimeField, T: Transcript<F>, I: IOP<'a, F>> Verifier<'a, F, T, I, PerRegisterARP> {
     pub fn new(
         instance: InstanceProperties<F>, 
         f_at_z_m: Vec<F>,
-        f_roots: Vec< < <I::Tree as IopTree<F> >::Hasher as IopTreeHasher<F> >::HashOutput >,
-        g_root: < <I::Tree as IopTree<F> >::Hasher as IopTreeHasher<F> >::HashOutput
+        f_roots: Vec< < <I::Tree as IopTree<'a, F> >::Hasher as IopTreeHasher<F> >::HashOutput >,
+        g_root: < <I::Tree as IopTree<'a, F> >::Hasher as IopTreeHasher<F> >::HashOutput
         ) -> Result<Self, SynthesisError> {
 
         let num_rows = instance.num_rows as u64;
@@ -613,5 +613,7 @@ fn test_fib_verifier() {
     ).expect("some h_2 value");
 
     assert_eq!(h_2_at_x, h2_lde.as_ref()[natural_x_index], "h_2 simulation failed");
+
+    // Now we need to check that H1 and H2 are indeed low degree polynomials
 
 }
