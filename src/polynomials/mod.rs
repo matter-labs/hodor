@@ -18,11 +18,11 @@ impl PolynomialForm for Values{}
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Polynomial<F: PrimeField, P: PolynomialForm> {
     coeffs: Vec<F>,
-    exp: u32,
+    pub exp: u32,
     pub omega: F,
     pub omegainv: F,
-    geninv: F,
-    minv: F,
+    pub geninv: F,
+    pub minv: F,
     _marker: std::marker::PhantomData<P>
 }
 
@@ -417,11 +417,12 @@ impl<F: PrimeField> Polynomial<F, Coefficients> {
         let num_cpus_hint = if num_cpus <= factor {
             Some(1)
         } else {
-            let threads_per_coset = (factor - 1) / num_cpus + 1;
+            let mut threads_per_coset = factor / num_cpus;
+            if factor % num_cpus != 0 {
+                threads_per_coset += 1;
+            }
             Some(threads_per_coset)
         };
-
-        // asuume num_cpu > factor. TODO: make clever version for another case
 
         assert!(factor.is_power_of_two());
         let new_size = self.coeffs.len() * factor;
@@ -542,7 +543,10 @@ impl<F: PrimeField> Polynomial<F, Coefficients> {
         let num_cpus_hint = if num_cpus <= factor {
             Some(1)
         } else {
-            let threads_per_coset = (factor - 1) / num_cpus + 1;
+            let mut threads_per_coset = factor / num_cpus;
+            if factor % num_cpus != 0 {
+                threads_per_coset += 1;
+            }
             Some(threads_per_coset)
         };
 
@@ -732,11 +736,27 @@ impl<F: PrimeField> Polynomial<F, Values> {
 
     pub fn pow(&mut self, worker: &Worker, exp: u64)
     {
+        if exp == 2 {
+            return self.square(&worker);
+        }
         worker.scope(self.coeffs.len(), |scope, chunk| {
             for v in self.coeffs.chunks_mut(chunk) {
                 scope.spawn(move |_| {
                     for v in v.iter_mut() {
                         *v = v.pow([exp]);
+                    }
+                });
+            }
+        });
+    }
+
+    pub fn square(&mut self, worker: &Worker)
+    {
+        worker.scope(self.coeffs.len(), |scope, chunk| {
+            for v in self.coeffs.chunks_mut(chunk) {
+                scope.spawn(move |_| {
+                    for v in v.iter_mut() {
+                        v.square();
                     }
                 });
             }
@@ -967,7 +987,7 @@ fn test_lde_correctness() {
     let rng = &mut XorShiftRng::from_seed([0x3dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
 
     use ff::Field;
-    use crate::experiments::vdf::Fr;
+    use crate::experiments::Fr;
     use crate::fft::multicore::Worker;
     use crate::polynomials::Polynomial;
     use std::time::Instant;
@@ -1015,7 +1035,7 @@ fn test_coset_lde_correctness() {
     let rng = &mut XorShiftRng::from_seed([0x3dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
 
     use ff::Field;
-    use crate::experiments::vdf::Fr;
+    use crate::experiments::Fr;
     use crate::fft::multicore::Worker;
     use crate::polynomials::Polynomial;
     use std::time::Instant;
@@ -1063,7 +1083,7 @@ fn test_various_ldes() {
     let rng = &mut XorShiftRng::from_seed([0x3dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
 
     use ff::Field;
-    use crate::experiments::vdf::Fr;
+    use crate::experiments::Fr;
     use crate::fft::multicore::Worker;
     use crate::polynomials::Polynomial;
     use std::time::Instant;

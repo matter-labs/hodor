@@ -5,15 +5,15 @@ use crate::fft::multicore::*;
 use crate::SynthesisError;
 use crate::utils::*;
 
-use super::{FRIIOP, FRIProof};
+use super::*;
 
-impl<F: PrimeField, I: IOP<F>> FRIIOP<F, I> {
+impl<'a, F: PrimeField, I: IOP<'a, F>> NaiveFriIop<'a, F, I> {
     pub fn proof_from_lde_by_values(
-        lde_values: &Polynomial<F, Values>, 
+        lde_values: &'a Polynomial<F, Values>, 
         lde_factor: usize,
         output_coeffs_at_degree_plus_one: usize,
         worker: &Worker
-    ) -> Result<FRIProof<F, I>, SynthesisError> {
+    ) -> Result<FRIProofPrototype<'a, F, I>, SynthesisError> {
         let l0_commitment: I = I::create(lde_values.as_ref());
         let initial_domain_size = lde_values.size();
         let precomputation_size = initial_domain_size/2;
@@ -56,6 +56,8 @@ impl<F: PrimeField, I: IOP<F>> FRIIOP<F, I> {
         let mut values_slice = lde_values.as_ref();
 
         let omegas_inv_ref: &[F] = omegas_inv.as_ref();
+
+        let mut roots = vec![];
         
         for _ in 0..num_steps {
             let mut next_values = vec![F::zero(); next_domain_size];
@@ -99,6 +101,8 @@ impl<F: PrimeField, I: IOP<F>> FRIIOP<F, I> {
         });
 
         let intermediate_iop = I::create(next_values.as_ref());
+        let root = intermediate_iop.get_root();
+        roots.push(root);
         next_domain_challenge = intermediate_iop.get_challenge_scalar_from_root();
         intermediate_challenges.push(next_domain_challenge);
         next_domain_size /= 2;
@@ -111,7 +115,10 @@ impl<F: PrimeField, I: IOP<F>> FRIIOP<F, I> {
         values_slice = intermediate_values.last().expect("is something").as_ref();
     }
 
+    // final challenge is not necessary
     intermediate_challenges.pop().expect("will work");
+
+    let final_root = roots.pop().expect("will work");
 
     assert!(intermediate_challenges.len() == num_steps);
     assert!(intermediate_commitments.len() == num_steps);
@@ -137,12 +144,17 @@ impl<F: PrimeField, I: IOP<F>> FRIIOP<F, I> {
 
     // println!("Degree = {}", degree_plus_one);
 
-    Ok(FRIProof {
+    Ok(FRIProofPrototype {
         l0_commitment,
         intermediate_commitments,
         intermediate_values,
         intermediate_challenges,
-        final_coefficients: final_poly_coeffs
+        final_root,
+        final_coefficients: final_poly_coeffs,
+        initial_degree_plus_one,
+        output_coeffs_at_degree_plus_one,
+        lde_factor,
+        _marker: std::marker::PhantomData
     })
 
     }
@@ -151,55 +163,55 @@ impl<F: PrimeField, I: IOP<F>> FRIIOP<F, I> {
 
 
 
-#[test]
-fn test_fib_conversion_into_by_values_fri() {
-    use crate::Fr;
-    use crate::air::Fibonacci;
-    use crate::air::TestTraceSystem;
-    use crate::air::IntoAIR;
-    use crate::arp::*;
-    use crate::ali::ALI;
-    use crate::fft::multicore::Worker;
-    use crate::ali::deep_ali::*;
-    use crate::iop::blake2s_trivial_iop::TrivialBlake2sIOP;
+// #[test]
+// fn test_fib_conversion_into_by_values_fri() {
+//     use crate::Fr;
+//     use crate::air::Fibonacci;
+//     use crate::air::TestTraceSystem;
+//     use crate::air::IntoAIR;
+//     use crate::arp::*;
+//     use crate::ali::ALI;
+//     use crate::fft::multicore::Worker;
+//     use crate::ali::deep_ali::*;
+//     use crate::iop::blake2s_trivial_iop::TrivialBlake2sIOP;
 
-    let fib = Fibonacci::<Fr> {
-        final_b: Some(5),
-        at_step: Some(3),
-        _marker: std::marker::PhantomData
-    };
+//     let fib = Fibonacci::<Fr> {
+//         final_b: Some(5),
+//         at_step: Some(3),
+//         _marker: std::marker::PhantomData
+//     };
 
-    let mut test_tracer = TestTraceSystem::<Fr>::new();
-    fib.trace(&mut test_tracer).expect("should work");
-    test_tracer.calculate_witness(1, 1, 3);
-    let mut arp = ARP::<Fr>::new(test_tracer);
-    arp.route_into_single_witness_poly().expect("must work");
+//     let mut test_tracer = TestTraceSystem::<Fr>::new();
+//     fib.trace(&mut test_tracer).expect("should work");
+//     test_tracer.calculate_witness(1, 1, 3);
+//     let mut arp = ARP::<Fr>::new(test_tracer);
+//     arp.route_into_single_witness_poly().expect("must work");
 
-    let mut ali = ALI::from(arp);
-    let alpha = Fr::from_str("123").unwrap();
-    ali.calculate_g(alpha).expect("must work");
+//     let mut ali = ALI::from(arp);
+//     let alpha = Fr::from_str("123").unwrap();
+//     ali.calculate_g(alpha).expect("must work");
 
-    let mut deep_ali = DeepALI::from(ali);
-    let z = Fr::from_str("62").unwrap();
+//     let mut deep_ali = DeepALI::from(ali);
+//     let z = Fr::from_str("62").unwrap();
 
-    let lde_factor = 8;
+//     let lde_factor = 8;
 
-    let worker = Worker::new();
+//     let worker = Worker::new();
 
-    println!("F poly size = {}", deep_ali.f_poly.size());
-    println!("G poly size = {}", deep_ali.g_poly.size());
+//     println!("F poly size = {}", deep_ali.f_poly.size());
+//     println!("G poly size = {}", deep_ali.g_poly.size());
 
-    let f_lde_values = deep_ali.f_poly.clone().lde(&worker, lde_factor).expect("must work");
-    let g_lde_values = deep_ali.g_poly.clone().lde(&worker, lde_factor).expect("must work");
+//     let f_lde_values = deep_ali.f_poly.clone().lde(&worker, lde_factor).expect("must work");
+//     let g_lde_values = deep_ali.g_poly.clone().lde(&worker, lde_factor).expect("must work");
 
-    deep_ali.make_deep(f_lde_values, g_lde_values, z).expect("must work");
+//     deep_ali.make_deep(f_lde_values, g_lde_values, z).expect("must work");
 
-    let h1_lde = deep_ali.h_1_poly.take().expect("is something");
-    let h2_lde = deep_ali.h_2_poly.take().expect("is something");
+//     let h1_lde = deep_ali.h_1_poly.take().expect("is something");
+//     let h2_lde = deep_ali.h_2_poly.take().expect("is something");
 
-    let h1_fri_proof = FRIIOP::<Fr, TrivialBlake2sIOP<Fr>>::proof_from_lde_by_values(&h1_lde, lde_factor, 1, &worker);
-    let h2_fri_proof = FRIIOP::<Fr, TrivialBlake2sIOP<Fr>>::proof_from_lde_by_values(&h2_lde, lde_factor, 1, &worker);
+//     let h1_fri_proof = FRIIOP::<Fr, TrivialBlake2sIOP<Fr>>::proof_from_lde_by_values(&h1_lde, lde_factor, 1, &worker);
+//     let h2_fri_proof = FRIIOP::<Fr, TrivialBlake2sIOP<Fr>>::proof_from_lde_by_values(&h2_lde, lde_factor, 1, &worker);
 
-    // println!("H1 = {:?}", deep_ali.h_1_poly);
-    // println!("H2 = {:?}", deep_ali.h_2_poly);
-}
+//     // println!("H1 = {:?}", deep_ali.h_1_poly);
+//     // println!("H2 = {:?}", deep_ali.h_2_poly);
+// }

@@ -16,15 +16,95 @@ pub enum Register {
     Aux(usize)
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct DenseConstraint {
     pub start_at: usize,
+    pub span: usize
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+pub struct RepeatedConstraint {
+    pub start_at: usize,
+    pub span: usize,
+    pub interval: usize
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+pub struct SparseConstraint {
+    pub rows: Vec<usize>
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum ConstraintDensity {
-    Dense,
-    Sparse(usize)
+    Dense(DenseConstraint),
+    Repeated(RepeatedConstraint),
+    Sparse(SparseConstraint),
+}
+
+impl std::default::Default for ConstraintDensity {
+    fn default() -> Self {
+        ConstraintDensity::Dense(DenseConstraint::default())
+    }
+}
+
+impl DenseConstraint {
+    pub fn new(starting_at: usize, span: usize) -> Self {
+        assert!(span >= 1, "Span >= 1");
+        
+        DenseConstraint{
+            start_at: starting_at,
+            span: span
+        }
+    }
+}
+
+impl std::default::Default for DenseConstraint {
+    fn default() -> Self {
+        DenseConstraint{
+            start_at: 0,
+            span: 1
+        }
+    }
+}
+
+impl RepeatedConstraint {
+    pub fn new(starting_at: usize, span: usize, interval: usize) -> Self {
+        assert!(interval != 1 && interval != 0 && span >= 1, "Repeated constraint with interval 1 should be DenseConstraint");
+        
+        RepeatedConstraint{
+            start_at: starting_at,
+            span: span,
+            interval: interval
+        }
+    }
+}
+
+impl std::default::Default for RepeatedConstraint {
+    fn default() -> Self {
+        RepeatedConstraint{
+            start_at: 0,
+            span: 1,
+            interval: 2
+        }
+    }
+}
+
+impl SparseConstraint{
+    pub fn new(at_rows: Vec<usize>) -> Self {
+        assert!(at_rows.len() > 0, "Interval constraint constraint must hold somewhere");
+        
+        SparseConstraint{
+            rows: at_rows
+        }
+    }
+}
+
+impl std::default::Default for SparseConstraint {
+    fn default() -> Self {
+        SparseConstraint{
+            rows: vec![]
+        }
+    }
 }
 
 #[derive(Debug)]

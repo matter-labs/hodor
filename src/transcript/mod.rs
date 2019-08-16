@@ -11,12 +11,14 @@ lazy_static! {
     };
 }
 
-pub trait Transcript<F: PrimeField> {
+pub trait Transcript<F: PrimeField>: Sized + Clone + 'static {
+    fn new() -> Self;
     fn commit_bytes(&mut self, bytes: &[u8]);
     fn commit_field_element(&mut self, element: &F);
     fn get_challenge(&mut self) -> F;
 }
 
+#[derive(Clone)]
 pub struct Blake2sTranscript<F: PrimeField> {
     state: State,
     _marker: std::marker::PhantomData<F>
@@ -25,7 +27,9 @@ pub struct Blake2sTranscript<F: PrimeField> {
 impl<F: PrimeField> Blake2sTranscript<F> {
     const SHAVE_BITS: u32 = 256 - F::CAPACITY;
     const REPR_SIZE: usize = std::mem::size_of::<F::Repr>();
-        
+}
+
+impl<F: PrimeField> Transcript<F> for Blake2sTranscript<F> {
     fn new() -> Self {
         assert!(F::NUM_BITS < 256);
         let state = (*TRANSCRIPT_BLAKE2S_PARAMS).clone();
@@ -34,16 +38,14 @@ impl<F: PrimeField> Blake2sTranscript<F> {
             _marker: std::marker::PhantomData
         }
     }
-}
 
-impl<F: PrimeField> Transcript<F> for Blake2sTranscript<F> {
     fn commit_bytes(&mut self, bytes: &[u8]) {
         self.state.update(&bytes);
     }
 
     fn commit_field_element(&mut self, element: &F) {
         let repr = element.into_repr();
-        let mut bytes: Vec<u8> = vec![];
+        let mut bytes: Vec<u8> = vec![0u8; Self::REPR_SIZE];
         repr.write_be(&mut bytes[..]).expect("should write");
         self.state.update(&bytes[..]);
     }

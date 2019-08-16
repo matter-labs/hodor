@@ -20,4 +20,4 @@ pub trait TreeHasher: Hasher{
     }
 }
 
-pub mod sequential_smt;
+// pub mod sequential_smt;
