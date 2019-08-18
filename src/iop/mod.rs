@@ -3,9 +3,19 @@ use ff::PrimeField;
 pub mod trivial_coset_combiner;
 pub mod blake2s_trivial_iop;
 
+pub trait CosetInformation: Sized + Clone + Copy {
+    const COSET_SIZE: usize;
+}
+
 pub trait CosetCombiner<'c, F: PrimeField> {
+    const EXPECTED_DEGREE: usize;
+    const COSET_SIZE: usize;
+    // type CosetData: CosetInformation;
+    
     fn new<'l>(leafs: &'l [F]) -> Self where 'l: 'c;
     fn get(&self, natural_index: usize) -> &'c F;
+    fn get_coset_for_index(natural_index: usize, domain_size: usize) -> Vec<usize>;
+    // fn get_coset_for_index_f(natural_index: usize, domain_size: usize) -> [usize; Self::COSET_SIZE];
     // fn shuffle_for_iop(values: Vec<F>) -> (Vec<F>, Vec<Self::Index>);
 }
 

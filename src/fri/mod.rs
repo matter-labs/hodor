@@ -25,12 +25,12 @@ pub trait FRIIOP<'a, F: PrimeField> {
 
     fn prototype_into_proof(
         prototype: Self::ProofPrototype,
-        iop_values: &'a Polynomial<F, Values>,
+        iop_values: &Polynomial<F, Values>,
         natural_first_element_index: usize,
     ) -> Result<Self::Proof, SynthesisError>;
 
     fn verify_proof(
-        proof: &'a Self::Proof,
+        proof: &Self::Proof,
         natural_element_index: usize,
         expected_value: F
     ) -> Result<bool, SynthesisError>;
@@ -64,14 +64,14 @@ impl<'a, F: PrimeField, I: IOP<'a, F>> FRIIOP<'a, F> for NaiveFriIop<'a, F, I> {
 
     fn prototype_into_proof(
         prototype: Self::ProofPrototype,
-        iop_values: &'a Polynomial<F, Values>,
+        iop_values: &Polynomial<F, Values>,
         natural_first_element_index: usize,
     ) -> Result<Self::Proof, SynthesisError> {
         prototype.produce_proof(iop_values, natural_first_element_index)
     }
 
     fn verify_proof(
-        proof: &'a Self::Proof,
+        proof: &Self::Proof,
         natural_element_index: usize,
         expected_value: F
     ) -> Result<bool, SynthesisError> {
@@ -290,15 +290,15 @@ fn test_fib_fri_iop_verifier() {
 
     let natural_x_index = 1;
 
-    // {
-    //     let valid = NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>::verify_prototype(
-    //         &h1_fri_proof,
-    //         &h1_lde,
-    //         natural_x_index
-    //     ).expect("must work");
+    {
+        let valid = NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>::verify_prototype(
+            &h1_fri_proof,
+            &h1_lde,
+            natural_x_index
+        ).expect("must work");
 
-    //     assert!(valid);
-    // }
+        assert!(valid);
+    }
 
     // {
     //     let valid = NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>::verify_prototype(

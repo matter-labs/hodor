@@ -10,7 +10,7 @@ impl<'a, F: PrimeField, I: IOP<'a, F>> FRIProofPrototype<'a, F, I> {
     // TODO: This is a draft and will transform into query checker after debugging
     pub fn produce_proof(
         self,
-        iop_values: &'a Polynomial<F, Values>,
+        iop_values: &Polynomial<F, Values>,
         natural_first_element_index: usize,
     ) -> Result<FRIProof<'a, F, I>, SynthesisError> {
         let mut domain_size = self.initial_degree_plus_one * self.lde_factor;
@@ -21,9 +21,16 @@ impl<'a, F: PrimeField, I: IOP<'a, F>> FRIProofPrototype<'a, F, I> {
 
         for (iop, leaf_values) in Some(self.l0_commitment).iter().chain(&self.intermediate_commitments)
                                     .zip(Some(iop_values).into_iter().chain(&self.intermediate_values)) {
-            let natural_pair_index = (next_domain_idx + (domain_size / 2)) % domain_size;
+            
+            let coset_values = <I::Combiner as CosetCombiner<'a, F>>::get_coset_for_index(next_domain_idx, domain_size);
+
+            if coset_values.len() != <I::Combiner as CosetCombiner<'a, F>>::COSET_SIZE {
+                return Err(SynthesisError::InvalidValue(format!("invalid coset size, expected {}, got {}", <I::Combiner as CosetCombiner<'a, F>>::COSET_SIZE, coset_values.len())));
+            }
+            // let natural_pair_index = (next_domain_idx + (domain_size / 2)) % domain_size;
         
-            for idx in vec![next_domain_idx, natural_pair_index].into_iter() {
+            // for idx in vec![next_domain_idx, natural_pair_index].into_iter() {
+            for idx in coset_values.into_iter() {
                 let query = iop.query(idx, leaf_values.as_ref());
                 queries.push(query);
             }

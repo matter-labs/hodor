@@ -35,19 +35,13 @@ impl<'a, F: PrimeField, I: IOP<'a, F>> NaiveFriIop<'a, F, I> {
             return Err(SynthesisError::InvalidValue(format!("initial challenge value {} is not in the LDE domain", domain_element)));
         }
 
-
         let mut omega = domain.generator;
         let mut omega_inv = omega.inverse().ok_or(
             SynthesisError::DivisionByZero(format!("domain generator {} does not have an inverse", omega))
         )?;
 
-        // let element_x = domain.generator.pow([natural_element_index as u64]);
-        // let mut pair_x = element_x;
-        // pair_x.negate();
-
         let mut expected_value: Option<F> = None;
         let mut domain_size = domain.size as usize;
-        // let mut next_domain_size = (domain.size / 2) as usize;
         let mut next_domain_idx = natural_element_index;
 
         for (iop_values, iop_challenge) in Some(leaf_values).into_iter().chain(&proof.intermediate_values)
@@ -160,23 +154,28 @@ impl<'a, F: PrimeField, I: IOP<'a, F>> NaiveFriIop<'a, F, I> {
         for (root, queries) in proof.roots.iter()
                                 .zip(proof.queries.chunks_exact(degree)) 
         {
-            if !I::verify_query(&queries[0], &root) {
-                return Ok(false);
+            for q in queries.iter() {
+                if !I::verify_query(&q, &root) {
+                    return Ok(false);
+                }
             }
 
-            if !I::verify_query(&queries[1], &root) {
-                return Ok(false);
+            let coset_values = <I::Combiner as CosetCombiner<'a, F>>::get_coset_for_index(next_domain_idx, domain_size);
+
+            if coset_values.len() != <I::Combiner as CosetCombiner<'a, F>>::COSET_SIZE {
+                return Err(SynthesisError::InvalidValue(format!("invalid coset size, expected {}, got {}", <I::Combiner as CosetCombiner<'a, F>>::COSET_SIZE, coset_values.len())));
             }
 
-            if (&queries[0]).index() != next_domain_idx {
-                return Ok(false);
+            for q in queries.iter() {
+                if !coset_values.contains(&q.index()) {
+                    return Ok(false);
+                }
             }
 
-            let natural_pair_index = (next_domain_idx + (domain_size / 2)) % domain_size;
-            if (&queries[1]).index() != natural_pair_index {
-                return Ok(false);
+            for (c, q) in coset_values.iter().zip(queries.iter()) {
+                assert!(q.index() == *c, "coset values and produced queries are expected to be sorted!");
             }
-
+            
             let iop_challenge = I::encode_root_into_challenge(root);
 
             let f_at_omega = (&queries[0]).value();
@@ -187,7 +186,7 @@ impl<'a, F: PrimeField, I: IOP<'a, F>> NaiveFriIop<'a, F, I> {
                 }
             }
             let f_at_minus_omega = (&queries[1]).value();
-            let divisor = omega_inv.pow([next_domain_idx as u64]);
+            let divisor = omega_inv.pow([coset_values[0] as u64]);
 
             let mut v_even_coeffs = f_at_omega;
             v_even_coeffs.add_assign(&f_at_minus_omega);
