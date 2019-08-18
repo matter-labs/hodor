@@ -8,26 +8,26 @@ impl CosetInformation for CosetOfSizeTwo {
     const COSET_SIZE: usize = 2usize;
 }
 
-pub struct TrivialCombiner<'c, F: PrimeField> {
-    leafs: & 'c [F]
+pub struct TrivialCombiner<F: PrimeField> {
+    _marker: std::marker::PhantomData<F>
 }
 
 
 
-impl<'c, F: PrimeField> CosetCombiner<'c, F> for TrivialCombiner<'c, F> {
+impl<'c, F: PrimeField> CosetCombiner<F> for TrivialCombiner<F> {
     const EXPECTED_DEGREE: usize = 2usize;
     const COSET_SIZE: usize = 2usize;
 
     #[inline(always)] 
-    fn get(&self, natural_index: usize) -> &'c F {
-        &self.leafs[natural_index]
+    fn get_leaf(leafs: &[F], permuted_index: usize) -> &F {
+        &leafs[permuted_index]
     }
 
-    fn new<'l>(leafs: &'l [F]) -> Self where 'l: 'c {
-        Self {
-            leafs: leafs
-        }
-    }
+    // fn new<'l>(leafs: &'l [F]) -> Self where 'l: 'c {
+    //     Self {
+    //         leafs: leafs
+    //     }
+    // }
 
     fn get_coset_for_index(natural_index: usize, domain_size: usize) -> Vec<usize> {
         assert!(natural_index < domain_size);

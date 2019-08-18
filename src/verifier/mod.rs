@@ -15,7 +15,7 @@ use indexmap::IndexSet as IndexSet;
 use indexmap::IndexMap as IndexMap;
 // use std::collections::{IndexSet, IndexMap};
 
-pub struct Verifier<'a, F: PrimeField, T: Transcript<F>, I: IOP<'a, F>, A: ARPType> {
+pub struct Verifier<F: PrimeField, T: Transcript<F>, I: IOP<F>, A: ARPType> {
     instance: InstanceProperties<F>,
     max_constraint_power: u64,
     column_domain: Domain::<F>,
@@ -25,20 +25,20 @@ pub struct Verifier<'a, F: PrimeField, T: Transcript<F>, I: IOP<'a, F>, A: ARPTy
     all_boundary_constrained_registers: IndexSet::<Register>,
     constraints_batched_by_density: IndexMap::< ConstraintDensity, Vec<Constraint<F>> >,
     transcript: T,
-    f_iop_roots: Vec< < <I::Tree as IopTree<'a, F> >::Hasher as IopTreeHasher<F>>::HashOutput >,
-    g_iop_root: < <I::Tree as IopTree<'a, F> >::Hasher as IopTreeHasher<F>>::HashOutput,
+    f_iop_roots: Vec< < <I::Tree as IopTree<F> >::Hasher as IopTreeHasher<F>>::HashOutput >,
+    g_iop_root: < <I::Tree as IopTree<F> >::Hasher as IopTreeHasher<F>>::HashOutput,
     constraint_challenges: Vec<(F, F)>,
     boundary_constraint_challenges: Vec<(F, F)>,
 
     _marker: std::marker::PhantomData<A>
 }
 
-impl<'a, F: PrimeField, T: Transcript<F>, I: IOP<'a, F>> Verifier<'a, F, T, I, PerRegisterARP> {
+impl<F: PrimeField, T: Transcript<F>, I: IOP<F>> Verifier<F, T, I, PerRegisterARP> {
     pub fn new(
         instance: InstanceProperties<F>, 
         f_at_z_m: Vec<F>,
-        f_roots: Vec< < <I::Tree as IopTree<'a, F> >::Hasher as IopTreeHasher<F> >::HashOutput >,
-        g_root: < <I::Tree as IopTree<'a, F> >::Hasher as IopTreeHasher<F> >::HashOutput
+        f_roots: Vec< < <I::Tree as IopTree<F> >::Hasher as IopTreeHasher<F> >::HashOutput >,
+        g_root: < <I::Tree as IopTree<F> >::Hasher as IopTreeHasher<F> >::HashOutput
         ) -> Result<Self, SynthesisError> {
 
         let num_rows = instance.num_rows as u64;
@@ -662,7 +662,7 @@ fn test_fib_full_verifier() {
 
     // Now we need to check that H1 and H2 are indeed low degree polynomials
 
-    let valid = <NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>> as FRIIOP<'_, Fr>>::verify_proof(
+    let valid = NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>::verify_proof(
         &h1_fri_proof,
         natural_x_index_h1,
         h_1_at_x
@@ -670,7 +670,7 @@ fn test_fib_full_verifier() {
 
     assert!(valid);
 
-    let valid = <NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>> as FRIIOP<'_, Fr>>::verify_proof(
+    let valid = NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>::verify_proof(
         &h2_fri_proof,
         natural_x_index_h2,
         h_2_at_x

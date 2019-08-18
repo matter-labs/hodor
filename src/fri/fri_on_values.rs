@@ -7,13 +7,13 @@ use crate::utils::*;
 
 use super::*;
 
-impl<'a, F: PrimeField, I: IOP<'a, F>> NaiveFriIop<'a, F, I> {
+impl<'a, F: PrimeField, I: IOP<F>> NaiveFriIop<F, I> {
     pub fn proof_from_lde_by_values(
-        lde_values: &'a Polynomial<F, Values>, 
+        lde_values: &Polynomial<F, Values>, 
         lde_factor: usize,
         output_coeffs_at_degree_plus_one: usize,
         worker: &Worker
-    ) -> Result<FRIProofPrototype<'a, F, I>, SynthesisError> {
+    ) -> Result<FRIProofPrototype<F, I>, SynthesisError> {
         let l0_commitment: I = I::create(lde_values.as_ref());
         let initial_domain_size = lde_values.size();
         let precomputation_size = initial_domain_size/2;
@@ -154,7 +154,6 @@ impl<'a, F: PrimeField, I: IOP<'a, F>> NaiveFriIop<'a, F, I> {
         initial_degree_plus_one,
         output_coeffs_at_degree_plus_one,
         lde_factor,
-        _marker: std::marker::PhantomData
     })
 
     }

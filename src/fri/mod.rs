@@ -9,15 +9,15 @@ pub mod fri_on_values;
 pub mod verifier;
 pub mod query_producer;
 
-pub trait FRIIOP<'a, F: PrimeField> {
+pub trait FriIop<F: PrimeField> {
     const DEGREE: usize;
 
-    type IopType: IOP<'a, F>;
+    type IopType: IOP<F>;
     type ProofPrototype;
     type Proof;
 
     fn proof_from_lde(
-        lde_values: &'a Polynomial<F, Values>, 
+        lde_values: &Polynomial<F, Values>, 
         lde_factor: usize,
         output_coeffs_at_degree_plus_one: usize,
         worker: &Worker
@@ -36,20 +36,20 @@ pub trait FRIIOP<'a, F: PrimeField> {
     ) -> Result<bool, SynthesisError>;
 }
 
-pub struct NaiveFriIop<'a, F: PrimeField, I: IOP<'a, F>> {
+pub struct NaiveFriIop<F: PrimeField, I: IOP<F>> {
     _marker_f: std::marker::PhantomData<F>,
-    _marker_i: std::marker::PhantomData<&'a I>
+    _marker_i: std::marker::PhantomData<I>
 }
 
-impl<'a, F: PrimeField, I: IOP<'a, F>> FRIIOP<'a, F> for NaiveFriIop<'a, F, I> {
+impl<'a, F: PrimeField, I: IOP<F>> FriIop<F> for NaiveFriIop<F, I> {
     const DEGREE: usize = 2;
 
     type IopType = I;
-    type ProofPrototype = FRIProofPrototype<'a, F, I>;
-    type Proof = FRIProof<'a, F, I>;
+    type ProofPrototype = FRIProofPrototype<F, I>;
+    type Proof = FRIProof<F, I>;
 
     fn proof_from_lde(
-        lde_values: &'a Polynomial<F, Values>, 
+        lde_values: &Polynomial<F, Values>, 
         lde_factor: usize,
         output_coeffs_at_degree_plus_one: usize,
         worker: &Worker
@@ -79,36 +79,34 @@ impl<'a, F: PrimeField, I: IOP<'a, F>> FRIIOP<'a, F> for NaiveFriIop<'a, F, I> {
     }
 }
 
-pub struct FRIProofPrototype<'a, F: PrimeField, I: IOP<'a, F>> {
+pub struct FRIProofPrototype<F: PrimeField, I: IOP<F>> {
     pub l0_commitment: I,
     pub intermediate_commitments: Vec<I>,
     pub intermediate_values: Vec< Polynomial<F, Values> >,
     pub intermediate_challenges: Vec<F>,
-    pub final_root: < <I::Tree as IopTree<'a, F> >::Hasher as IopTreeHasher<F>>::HashOutput,
+    pub final_root: < <I::Tree as IopTree<F> >::Hasher as IopTreeHasher<F>>::HashOutput,
     pub final_coefficients: Vec<F>,
     pub initial_degree_plus_one: usize,
     pub output_coeffs_at_degree_plus_one: usize,
     pub lde_factor: usize,
-    _marker: std::marker::PhantomData<&'a I>
 }
 
-pub struct FRIProof<'a, F: PrimeField, I: IOP<'a, F>> {
-    pub queries: Vec< <I as IOP<'a, F> >::Query >,
-    pub roots: Vec< < <I::Tree as IopTree<'a, F> >::Hasher as IopTreeHasher<F>>::HashOutput>,
+pub struct FRIProof<F: PrimeField, I: IOP<F>> {
+    pub queries: Vec< <I as IOP<F> >::Query >,
+    pub roots: Vec< < <I::Tree as IopTree<F> >::Hasher as IopTreeHasher<F>>::HashOutput>,
     pub final_coefficients: Vec<F>,
     pub initial_degree_plus_one: usize,
     pub output_coeffs_at_degree_plus_one: usize,
     pub lde_factor: usize,
-    _marker: std::marker::PhantomData<&'a I>
 }
 
-impl<'a, F: PrimeField, I: IOP<'a, F>> NaiveFriIop<'a, F, I> {
+impl<'a, F: PrimeField, I: IOP<F>> NaiveFriIop<F, I> {
     pub fn proof_from_lde_through_coefficients(
         lde_values: Polynomial<F, Values>, 
         lde_factor: usize,
         output_coeffs_at_degree_plus_one: usize,
         worker: &Worker
-    ) -> Result<FRIProofPrototype<'a, F, I>, SynthesisError> {
+    ) -> Result<FRIProofPrototype<F, I>, SynthesisError> {
         let l0_commitment: I = I::create(lde_values.as_ref());
         let initial_domain_size = lde_values.size();
 
@@ -204,7 +202,6 @@ impl<'a, F: PrimeField, I: IOP<'a, F>> NaiveFriIop<'a, F, I> {
         initial_degree_plus_one,
         output_coeffs_at_degree_plus_one,
         lde_factor,
-        _marker: std::marker::PhantomData
     })
 
     }
@@ -288,7 +285,7 @@ fn test_fib_fri_iop_verifier() {
     let h1_fri_proof = NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>::proof_from_lde_by_values(&h1_lde, lde_factor, output_at_degree, &worker).expect("must work");
     let h2_fri_proof = NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>::proof_from_lde_by_values(&h2_lde, lde_factor, output_at_degree, &worker).expect("must work");
 
-    let natural_x_index = 1;
+    let natural_x_index = 33;
 
     {
         let valid = NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>::verify_prototype(
@@ -300,17 +297,17 @@ fn test_fib_fri_iop_verifier() {
         assert!(valid);
     }
 
-    // {
-    //     let valid = NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>::verify_prototype(
-    //         &h2_fri_proof,
-    //         &h2_lde,
-    //         natural_x_index
-    //     ).expect("must work");
+    {
+        let valid = NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>::verify_prototype(
+            &h2_fri_proof,
+            &h2_lde,
+            natural_x_index
+        ).expect("must work");
 
-    //     assert!(valid);
-    // }
+        assert!(valid);
+    }
 
-    let proof_h1 = <NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>> as FRIIOP<'_, Fr>>::prototype_into_proof(
+    let proof_h1 = NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr> >::prototype_into_proof(
         h1_fri_proof,
         &h1_lde,
         natural_x_index
@@ -318,7 +315,7 @@ fn test_fib_fri_iop_verifier() {
 
     let expected_value = h1_lde.as_ref()[natural_x_index];
 
-    let valid = <NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>> as FRIIOP<'_, Fr>>::verify_proof(
+    let valid = NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr> >::verify_proof(
         &proof_h1,
         natural_x_index,
         expected_value
@@ -326,7 +323,7 @@ fn test_fib_fri_iop_verifier() {
 
     assert!(valid);
 
-    let proof_h2 = <NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>> as FRIIOP<'_, Fr>>::prototype_into_proof(
+    let proof_h2 = <NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>> as FriIop<Fr>>::prototype_into_proof(
         h2_fri_proof,
         &h2_lde,
         natural_x_index
@@ -334,7 +331,7 @@ fn test_fib_fri_iop_verifier() {
 
     let expected_value = h2_lde.as_ref()[natural_x_index];
 
-    let valid = <NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>> as FRIIOP<'_, Fr>>::verify_proof(
+    let valid = <NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>> as FriIop<Fr>>::verify_proof(
         &proof_h2,
         natural_x_index,
         expected_value
@@ -342,7 +339,7 @@ fn test_fib_fri_iop_verifier() {
 
     assert!(valid);
 
-    let valid = <NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>> as FRIIOP<'_, Fr>>::verify_proof(
+    let valid = <NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>> as FriIop<Fr>>::verify_proof(
         &proof_h1,
         natural_x_index,
         expected_value

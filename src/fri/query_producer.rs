@@ -6,13 +6,13 @@ use crate::polynomials::*;
 use super::*;
 use crate::iop::*;
 
-impl<'a, F: PrimeField, I: IOP<'a, F>> FRIProofPrototype<'a, F, I> {
+impl<'a, F: PrimeField, I: IOP<F>> FRIProofPrototype<F, I> {
     // TODO: This is a draft and will transform into query checker after debugging
     pub fn produce_proof(
         self,
         iop_values: &Polynomial<F, Values>,
         natural_first_element_index: usize,
-    ) -> Result<FRIProof<'a, F, I>, SynthesisError> {
+    ) -> Result<FRIProof<F, I>, SynthesisError> {
         let mut domain_size = self.initial_degree_plus_one * self.lde_factor;
         let mut next_domain_idx = natural_first_element_index;
 
@@ -22,10 +22,10 @@ impl<'a, F: PrimeField, I: IOP<'a, F>> FRIProofPrototype<'a, F, I> {
         for (iop, leaf_values) in Some(self.l0_commitment).iter().chain(&self.intermediate_commitments)
                                     .zip(Some(iop_values).into_iter().chain(&self.intermediate_values)) {
             
-            let coset_values = <I::Combiner as CosetCombiner<'a, F>>::get_coset_for_index(next_domain_idx, domain_size);
+            let coset_values = <I::Combiner as CosetCombiner<F>>::get_coset_for_index(next_domain_idx, domain_size);
 
-            if coset_values.len() != <I::Combiner as CosetCombiner<'a, F>>::COSET_SIZE {
-                return Err(SynthesisError::InvalidValue(format!("invalid coset size, expected {}, got {}", <I::Combiner as CosetCombiner<'a, F>>::COSET_SIZE, coset_values.len())));
+            if coset_values.len() != <I::Combiner as CosetCombiner<F>>::COSET_SIZE {
+                return Err(SynthesisError::InvalidValue(format!("invalid coset size, expected {}, got {}", <I::Combiner as CosetCombiner<F>>::COSET_SIZE, coset_values.len())));
             }
             // let natural_pair_index = (next_domain_idx + (domain_size / 2)) % domain_size;
         
@@ -41,14 +41,13 @@ impl<'a, F: PrimeField, I: IOP<'a, F>> FRIProofPrototype<'a, F, I> {
             domain_size >>= 1;
         }
 
-        let proof = FRIProof::<'a, F, I> {
+        let proof = FRIProof::<F, I> {
             queries,
             roots,
             final_coefficients: self.final_coefficients,
             initial_degree_plus_one: self.initial_degree_plus_one,
             output_coeffs_at_degree_plus_one: self.output_coeffs_at_degree_plus_one,
             lde_factor: self.lde_factor,
-            _marker: std::marker::PhantomData
         };
 
         Ok(proof)

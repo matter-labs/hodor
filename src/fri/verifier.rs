@@ -6,12 +6,12 @@ use crate::polynomials::*;
 use super::*;
 use crate::iop::*;
 
-impl<'a, F: PrimeField, I: IOP<'a, F>> NaiveFriIop<'a, F, I> {
+impl<'a, F: PrimeField, I: IOP<F>> NaiveFriIop<F, I> {
     pub fn verify_prototype(
-        proof: &'a FRIProofPrototype<'a, F, I>,
-        leaf_values: &'a Polynomial<F, Values>, 
+        proof: & FRIProofPrototype<F, I>,
+        leaf_values: & Polynomial<F, Values>, 
         natural_element_index: usize,
-    ) -> Result<bool, SynthesisError>{
+    ) -> Result<bool, SynthesisError> {
         let mut two = F::one();
         two.double();
 
@@ -46,11 +46,11 @@ impl<'a, F: PrimeField, I: IOP<'a, F>> NaiveFriIop<'a, F, I> {
 
         for (iop_values, iop_challenge) in Some(leaf_values).into_iter().chain(&proof.intermediate_values)
                                         .zip(proof.intermediate_challenges.iter()) {
-            let combiner = I::combine(iop_values.as_ref());
+            // let combiner = I::combine(iop_values.as_ref());
 
             let natural_pair_index = (next_domain_idx + (domain_size / 2)) % domain_size;
 
-            let f_at_omega = combiner.get(natural_element_index);
+            let f_at_omega = I::get_combined(iop_values.as_ref(), natural_element_index);
 
             if let Some(value) = expected_value {
                 // check in the next domain
@@ -59,7 +59,7 @@ impl<'a, F: PrimeField, I: IOP<'a, F>> NaiveFriIop<'a, F, I> {
                 }
             }
 
-            let f_at_minus_omega = combiner.get(natural_pair_index as usize);
+            let f_at_minus_omega = I::get_combined(iop_values.as_ref(), natural_pair_index as usize);
             let divisor = omega_inv.pow([next_domain_idx as u64]);
 
             let mut v_even_coeffs = *f_at_omega;
@@ -110,7 +110,7 @@ impl<'a, F: PrimeField, I: IOP<'a, F>> NaiveFriIop<'a, F, I> {
     }
 
     pub fn verify_proof_queries(
-        proof: &FRIProof<'a, F, I>,
+        proof: &FRIProof<F, I>,
         natural_element_index: usize,
         degree: usize, 
         expected_value: F,
@@ -160,10 +160,10 @@ impl<'a, F: PrimeField, I: IOP<'a, F>> NaiveFriIop<'a, F, I> {
                 }
             }
 
-            let coset_values = <I::Combiner as CosetCombiner<'a, F>>::get_coset_for_index(next_domain_idx, domain_size);
+            let coset_values = <I::Combiner as CosetCombiner<F>>::get_coset_for_index(next_domain_idx, domain_size);
 
-            if coset_values.len() != <I::Combiner as CosetCombiner<'a, F>>::COSET_SIZE {
-                return Err(SynthesisError::InvalidValue(format!("invalid coset size, expected {}, got {}", <I::Combiner as CosetCombiner<'a, F>>::COSET_SIZE, coset_values.len())));
+            if coset_values.len() != <I::Combiner as CosetCombiner<F>>::COSET_SIZE {
+                return Err(SynthesisError::InvalidValue(format!("invalid coset size, expected {}, got {}", <I::Combiner as CosetCombiner<F>>::COSET_SIZE, coset_values.len())));
             }
 
             for q in queries.iter() {

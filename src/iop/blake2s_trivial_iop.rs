@@ -71,6 +71,8 @@ impl<F: PrimeField> Blake2sTreeHasher<F> {
     }
 }
 
+impl HashFunctionOutput for [u8; 32] {}
+
 impl<F: PrimeField> IopTreeHasher<F> for Blake2sTreeHasher<F> {
     type HashOutput = [u8; 32];
     type LeafEncoder = Blake2sLeafEncoder<F>;
@@ -117,15 +119,15 @@ impl<F: PrimeField> Blake2sIopTree<F> {
     }
 }
 
-impl<'a, F: PrimeField> IopTree<'a, F> for Blake2sIopTree<F> {
-    type Combiner = TrivialCombiner<'a, F>;
+impl<'a, F: PrimeField> IopTree<F> for Blake2sIopTree<F> {
+    type Combiner = TrivialCombiner<F>;
     type Hasher = Blake2sTreeHasher<F>;
 
     fn size(&self) -> u64 {
         self.size
     }
 
-    fn create<'l>(leafs: &'l [F]) -> Self where 'l: 'a {
+    fn create(leafs: &[F]) -> Self{
         {
             let _ = *BASE_BLAKE2S_PARAMS;
         }
@@ -133,8 +135,6 @@ impl<'a, F: PrimeField> IopTree<'a, F> for Blake2sIopTree<F> {
         let num_leafs = leafs.len();
         assert!(num_leafs == num_leafs.next_power_of_two());
         let num_nodes = num_leafs;
-
-        let combiner = <Self::Combiner as CosetCombiner<'a, F>>::new(leafs);
 
         let size = num_leafs as u64;
 
@@ -147,7 +147,6 @@ impl<'a, F: PrimeField> IopTree<'a, F> for Blake2sIopTree<F> {
 
         let mut leaf_hashes = vec![[0u8; 32]; num_leafs];
 
-        let combiner_ref = &combiner;
 
         {
             worker.scope(leafs.len(), |scope, chunk| {
@@ -157,7 +156,8 @@ impl<'a, F: PrimeField> IopTree<'a, F> for Blake2sIopTree<F> {
                         let base_idx = i*chunk;
                         for (j, lh) in lh.iter_mut().enumerate() {
                             let idx = base_idx + j;
-                            *lh = < Self::Hasher as IopTreeHasher<F> >::hash_leaf(combiner_ref.get(idx));
+                            let leaf_ref = <Self::Combiner as CosetCombiner<F> >::get_leaf(&leafs, idx);
+                            *lh = < Self::Hasher as IopTreeHasher<F> >::hash_leaf(leaf_ref);
                         }
                     });
                 }
@@ -248,7 +248,7 @@ impl<'a, F: PrimeField> IopTree<'a, F> for Blake2sIopTree<F> {
         &hash == root
     }
 
-    fn get_path<'l>(&self, index: usize, leafs_values: &'l [F]) -> Vec< <Self::Hasher as IopTreeHasher<F>>::HashOutput > where 'l: 'a {
+    fn get_path(&self, index: usize, leafs_values: &[F]) -> Vec< <Self::Hasher as IopTreeHasher<F>>::HashOutput >{
         assert!(self.size == self.nodes.len() as u64);
         let mut nodes = &self.nodes[..];
 
@@ -282,8 +282,8 @@ pub struct TrivialBlake2sIOP<F: PrimeField> {
 }
 
 
-impl<'i, F: PrimeField> IOP<'i, F> for TrivialBlake2sIOP<F> {
-    type Combiner = TrivialCombiner<'i, F>;
+impl<'i, F: PrimeField> IOP<F> for TrivialBlake2sIOP<F> {
+    type Combiner = TrivialCombiner<F>;
     type Tree = Blake2sIopTree<F>;
     type Query = TrivialBlake2sIopQuery<F>;
 
@@ -295,16 +295,16 @@ impl<'i, F: PrimeField> IOP<'i, F> for TrivialBlake2sIOP<F> {
         }
     }
 
-    fn combine<'l>(leafs: &'l [F]) -> Self::Combiner where 'l: 'i {
-        <Self::Combiner as CosetCombiner<'i, F>>::new(leafs)
+    fn get_combined(leafs: &[F], tree_index: usize) -> &F {
+        <Self::Combiner as CosetCombiner<F>>::get_leaf(leafs, tree_index)
     }
 
     fn get_root(&self) -> < <Self::Tree as IopTree<F> >::Hasher as IopTreeHasher<F>>::HashOutput {
         self.tree.get_root()
     }
 
-    fn encode_root_into_challenge(root: & < <Self::Tree as IopTree<'i, F> >::Hasher as IopTreeHasher<F>>::HashOutput) -> F {
-        <Self::Tree as IopTree<'i, F> >::encode_root_into_challenge(root)
+    fn encode_root_into_challenge(root: & < <Self::Tree as IopTree<F> >::Hasher as IopTreeHasher<F>>::HashOutput) -> F {
+        <Self::Tree as IopTree<F> >::encode_root_into_challenge(root)
     }
 
     fn get_challenge_scalar_from_root(&self) -> F {

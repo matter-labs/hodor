@@ -7,13 +7,15 @@ pub trait CosetInformation: Sized + Clone + Copy {
     const COSET_SIZE: usize;
 }
 
-pub trait CosetCombiner<'c, F: PrimeField> {
+pub trait CosetCombiner<F: PrimeField> {
     const EXPECTED_DEGREE: usize;
     const COSET_SIZE: usize;
     // type CosetData: CosetInformation;
     
-    fn new<'l>(leafs: &'l [F]) -> Self where 'l: 'c;
-    fn get(&self, natural_index: usize) -> &'c F;
+    // fn new<'l>(leafs: &'l [F]) -> Self where 'l: 'c;
+
+    // fn get(&self, natural_index: usize) -> &'c F;
+    fn get_leaf(leafs: &[F], tree_index: usize) -> &F;
     fn get_coset_for_index(natural_index: usize, domain_size: usize) -> Vec<usize>;
     // fn get_coset_for_index_f(natural_index: usize, domain_size: usize) -> [usize; Self::COSET_SIZE];
     // fn shuffle_for_iop(values: Vec<F>) -> (Vec<F>, Vec<Self::Index>);
@@ -31,8 +33,10 @@ pub trait HashEncoder<F: PrimeField> {
     fn interpret_hash(value: &Self::Input) -> F;
 }
 
+pub trait HashFunctionOutput: AsRef<[u8]> + Clone + Eq + PartialEq {}
+
 pub trait IopTreeHasher<F: PrimeField> {
-    type HashOutput: AsRef<[u8]> + Clone + Eq + PartialEq;
+    type HashOutput: HashFunctionOutput;
     type LeafEncoder: LeafEncoder<F> + HashEncoder<F>; 
 
     fn hash_leaf(value: &F) -> Self::HashOutput;
@@ -40,20 +44,19 @@ pub trait IopTreeHasher<F: PrimeField> {
     fn hash_node(values: &[Self::HashOutput], level: usize) -> Self::HashOutput;
 }
 
-pub trait IopTree<'a, F: PrimeField> {
-    type Combiner: CosetCombiner<'a, F>;
+pub trait IopTree<F: PrimeField> {
+    type Combiner: CosetCombiner<F>;
     type Hasher: IopTreeHasher<F>;
-    fn create<'l>(leafs: &'l [F]) -> Self where 'l: 'a;
-    // fn create_from_combiner(combiner: &'a Self::Combiner) -> Self;
+    fn create(leafs: &[F]) -> Self;
     fn size(&self) -> u64;
     fn get_root(&self) -> <Self::Hasher as IopTreeHasher<F>>::HashOutput;
     fn encode_root_into_challenge(root: & <Self::Hasher as IopTreeHasher<F>>::HashOutput) -> F;
     fn get_challenge_scalar_from_root(&self) -> F;
     fn verify(root: &<Self::Hasher as IopTreeHasher<F>>::HashOutput, leaf_value: &F, path: &[<Self::Hasher as IopTreeHasher<F>>::HashOutput], index: usize) -> bool;
-    fn get_path<'l>(&self, index: usize, leafs_values: &'l [F]) -> Vec< <Self::Hasher as IopTreeHasher<F>>::HashOutput > where 'l: 'a;
+    fn get_path(&self, index: usize, leafs_values: &[F]) -> Vec< <Self::Hasher as IopTreeHasher<F>>::HashOutput >;
 }
 
-pub trait IopQuery<F: PrimeField> {
+pub trait IopQuery<F: PrimeField>: 'static {
     type Hasher: IopTreeHasher<F>;
 
     fn index(&self) -> usize;
@@ -61,17 +64,17 @@ pub trait IopQuery<F: PrimeField> {
     fn path(&self) ->  &[<Self::Hasher as IopTreeHasher<F>>::HashOutput];
 }
 
-pub trait IOP<'i, F: PrimeField> {
-    type Combiner: CosetCombiner<'i, F>;
-    type Tree: IopTree<'i, F, Combiner = Self::Combiner>;
-    type Query: IopQuery<F, Hasher = <Self::Tree as IopTree<'i, F> >::Hasher>;
+pub trait IOP<F: PrimeField> {
+    type Combiner: CosetCombiner<F>;
+    type Tree: IopTree<F, Combiner = Self::Combiner>;
+    type Query: IopQuery<F, Hasher = <Self::Tree as IopTree<F> >::Hasher>;
 
-    fn create<'l>(leafs: &'l [F]) -> Self;
-    fn combine<'l>(leafs: &'l [F]) -> Self::Combiner where 'l: 'i;
-    fn get_root(&self) -> < <Self::Tree as IopTree<'i, F> >::Hasher as IopTreeHasher<F>>::HashOutput;
-    fn encode_root_into_challenge(root: & < <Self::Tree as IopTree<'i, F> >::Hasher as IopTreeHasher<F>>::HashOutput) -> F;
+    fn create(leafs: & [F]) -> Self;
+    fn get_combined(leafs: &[F], tree_index: usize) -> &F;
+    fn get_root(&self) -> < <Self::Tree as IopTree<F> >::Hasher as IopTreeHasher<F>>::HashOutput;
+    fn encode_root_into_challenge(root: & < <Self::Tree as IopTree<F> >::Hasher as IopTreeHasher<F>>::HashOutput) -> F;
     fn get_challenge_scalar_from_root(&self) -> F;
-    fn verify_query(query: &Self::Query, root: &< <Self::Tree as IopTree<'i, F> >::Hasher as IopTreeHasher<F>>::HashOutput) -> bool;
+    fn verify_query(query: &Self::Query, root: &< <Self::Tree as IopTree<F> >::Hasher as IopTreeHasher<F>>::HashOutput) -> bool;
     fn query(&self, index: usize, leafs: &[F]) -> Self::Query;
 }
 
