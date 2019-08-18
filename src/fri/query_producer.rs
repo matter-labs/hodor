@@ -22,7 +22,7 @@ impl<'a, F: PrimeField, I: IOP<F>> FRIProofPrototype<F, I> {
         for (iop, leaf_values) in Some(self.l0_commitment).iter().chain(&self.intermediate_commitments)
                                     .zip(Some(iop_values).into_iter().chain(&self.intermediate_values)) {
             
-            let coset_values = <I::Combiner as CosetCombiner<F>>::get_coset_for_index(next_domain_idx, domain_size);
+            let coset_values = <I::Combiner as CosetCombiner<F>>::get_coset_for_natural_index(next_domain_idx, domain_size);
 
             if coset_values.len() != <I::Combiner as CosetCombiner<F>>::COSET_SIZE {
                 return Err(SynthesisError::InvalidValue(format!("invalid coset size, expected {}, got {}", <I::Combiner as CosetCombiner<F>>::COSET_SIZE, coset_values.len())));

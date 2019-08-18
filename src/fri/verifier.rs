@@ -160,20 +160,20 @@ impl<'a, F: PrimeField, I: IOP<F>> NaiveFriIop<F, I> {
                 }
             }
 
-            let coset_values = <I::Combiner as CosetCombiner<F>>::get_coset_for_index(next_domain_idx, domain_size);
+            let coset_values = <I::Combiner as CosetCombiner<F>>::get_coset_for_natural_index(next_domain_idx, domain_size);
 
             if coset_values.len() != <I::Combiner as CosetCombiner<F>>::COSET_SIZE {
                 return Err(SynthesisError::InvalidValue(format!("invalid coset size, expected {}, got {}", <I::Combiner as CosetCombiner<F>>::COSET_SIZE, coset_values.len())));
             }
 
             for q in queries.iter() {
-                if !coset_values.contains(&q.index()) {
+                if !coset_values.contains(&q.natural_index()) {
                     return Ok(false);
                 }
             }
 
             for (c, q) in coset_values.iter().zip(queries.iter()) {
-                assert!(q.index() == *c, "coset values and produced queries are expected to be sorted!");
+                assert!(q.natural_index() == *c, "coset values and produced queries are expected to be sorted!");
             }
             
             let iop_challenge = I::encode_root_into_challenge(root);

@@ -19,17 +19,11 @@ impl<'c, F: PrimeField> CosetCombiner<F> for TrivialCombiner<F> {
     const COSET_SIZE: usize = 2usize;
 
     #[inline(always)] 
-    fn get_leaf(leafs: &[F], permuted_index: usize) -> &F {
-        &leafs[permuted_index]
+    fn get_leaf(leafs: &[F], for_tree_index: usize) -> &F {
+        &leafs[for_tree_index]
     }
 
-    // fn new<'l>(leafs: &'l [F]) -> Self where 'l: 'c {
-    //     Self {
-    //         leafs: leafs
-    //     }
-    // }
-
-    fn get_coset_for_index(natural_index: usize, domain_size: usize) -> Vec<usize> {
+    fn get_coset_for_natural_index(natural_index: usize, domain_size: usize) -> Vec<usize> {
         assert!(natural_index < domain_size);
         let natural_pair_index = (natural_index + (domain_size / 2)) % domain_size;
         let mut coset = vec![natural_index, natural_pair_index];
@@ -37,8 +31,18 @@ impl<'c, F: PrimeField> CosetCombiner<F> for TrivialCombiner<F> {
 
         coset
     }
-    
-    // fn shuffle_for_iop(values: Vec<F>) -> (Vec<F>, Vec<Self::Index>) {
-    //     (values, vec![])
-    // }
+
+    fn get_coset_for_tree_index(natural_index: usize, domain_size: usize) -> Vec<usize> {
+        Self::get_coset_for_natural_index(natural_index, domain_size)
+    }
+
+    #[inline(always)] 
+    fn tree_index_into_natural_index(tree_index: usize) -> usize {
+        tree_index
+    }
+
+    #[inline(always)] 
+    fn natural_index_into_tree_index(natural_index: usize) -> usize {
+        natural_index
+    }    
 }

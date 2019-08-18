@@ -12,13 +12,11 @@ pub trait CosetCombiner<F: PrimeField> {
     const COSET_SIZE: usize;
     // type CosetData: CosetInformation;
     
-    // fn new<'l>(leafs: &'l [F]) -> Self where 'l: 'c;
-
-    // fn get(&self, natural_index: usize) -> &'c F;
-    fn get_leaf(leafs: &[F], tree_index: usize) -> &F;
-    fn get_coset_for_index(natural_index: usize, domain_size: usize) -> Vec<usize>;
-    // fn get_coset_for_index_f(natural_index: usize, domain_size: usize) -> [usize; Self::COSET_SIZE];
-    // fn shuffle_for_iop(values: Vec<F>) -> (Vec<F>, Vec<Self::Index>);
+    fn get_leaf(leafs: &[F], for_tree_index: usize) -> &F;
+    fn tree_index_into_natural_index(tree_index: usize) -> usize;
+    fn natural_index_into_tree_index(natural_index: usize) -> usize;
+    fn get_coset_for_natural_index(natural_index: usize, domain_size: usize) -> Vec<usize>;
+    fn get_coset_for_tree_index(tree_index: usize, domain_size: usize) -> Vec<usize>;
 }
 
 pub trait LeafEncoder<F: PrimeField> {
@@ -59,7 +57,8 @@ pub trait IopTree<F: PrimeField> {
 pub trait IopQuery<F: PrimeField>: 'static {
     type Hasher: IopTreeHasher<F>;
 
-    fn index(&self) -> usize;
+    fn tree_index(&self) -> usize;
+    fn natural_index(&self) -> usize;
     fn value(&self) -> F;
     fn path(&self) ->  &[<Self::Hasher as IopTreeHasher<F>>::HashOutput];
 }

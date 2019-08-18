@@ -312,7 +312,7 @@ impl<'i, F: PrimeField> IOP<F> for TrivialBlake2sIOP<F> {
     }
 
     fn verify_query(query: &Self::Query, root: &< <Self::Tree as IopTree<F> >::Hasher as IopTreeHasher<F>>::HashOutput) -> bool {
-        Self::Tree::verify(root, &query.value(), &query.path(), query.index())
+        Self::Tree::verify(root, &query.value(), &query.path(), query.tree_index())
     }
 
     fn query(&self, index: usize, leafs: &[F]) -> Self::Query {
@@ -340,7 +340,11 @@ pub struct TrivialBlake2sIopQuery<F: PrimeField> {
 impl<F: PrimeField> IopQuery<F> for TrivialBlake2sIopQuery<F> {
     type Hasher = Blake2sTreeHasher<F>;
 
-    fn index(&self) -> usize {
+    fn natural_index(&self) -> usize {
+        self.index
+    }
+
+    fn tree_index(&self) -> usize {
         self.index
     }
 
