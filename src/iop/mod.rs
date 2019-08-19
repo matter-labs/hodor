@@ -12,7 +12,8 @@ pub trait CosetCombiner<F: PrimeField> {
     const COSET_SIZE: usize;
     // type CosetData: CosetInformation;
     
-    fn get_leaf(leafs: &[F], for_tree_index: usize) -> &F;
+    fn get_for_natural_index(leafs: &[F], natural_index: usize) -> &F;
+    fn get_for_tree_index(leafs: &[F], tree_index: usize) -> &F;
     fn tree_index_into_natural_index(tree_index: usize) -> usize;
     fn natural_index_into_tree_index(natural_index: usize) -> usize;
     fn get_coset_for_natural_index(natural_index: usize, domain_size: usize) -> Vec<usize>;
@@ -69,22 +70,11 @@ pub trait IOP<F: PrimeField> {
     type Query: IopQuery<F, Hasher = <Self::Tree as IopTree<F> >::Hasher>;
 
     fn create(leafs: & [F]) -> Self;
-    fn get_combined(leafs: &[F], tree_index: usize) -> &F;
+    fn get_for_natural_index(leafs: &[F], natural_index: usize) -> &F;
+    fn get_for_tree_index(leafs: &[F], tree_index: usize) -> &F;
     fn get_root(&self) -> < <Self::Tree as IopTree<F> >::Hasher as IopTreeHasher<F>>::HashOutput;
     fn encode_root_into_challenge(root: & < <Self::Tree as IopTree<F> >::Hasher as IopTreeHasher<F>>::HashOutput) -> F;
     fn get_challenge_scalar_from_root(&self) -> F;
     fn verify_query(query: &Self::Query, root: &< <Self::Tree as IopTree<F> >::Hasher as IopTreeHasher<F>>::HashOutput) -> bool;
-    fn query(&self, index: usize, leafs: &[F]) -> Self::Query;
-}
-
-fn log2_floor(num: usize) -> u32 {
-    assert!(num > 0);
-
-    let mut pow = 0;
-
-    while (1 << (pow+1)) <= num {
-        pow += 1;
-    }
-
-    pow
+    fn query(&self, natural_index: usize, leafs: &[F]) -> Self::Query;
 }

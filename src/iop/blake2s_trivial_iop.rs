@@ -1,6 +1,7 @@
 use ff::{PrimeField, PrimeFieldRepr};
 use blake2s_simd::{Params, State};
 use crate::fft::multicore::Worker;
+use crate::utils::log2_floor;
 use super::*;
 use super::trivial_coset_combiner::*;
 
@@ -147,7 +148,6 @@ impl<'a, F: PrimeField> IopTree<F> for Blake2sIopTree<F> {
 
         let mut leaf_hashes = vec![[0u8; 32]; num_leafs];
 
-
         {
             worker.scope(leafs.len(), |scope, chunk| {
                 for (i, lh) in leaf_hashes.chunks_mut(chunk)
@@ -156,7 +156,7 @@ impl<'a, F: PrimeField> IopTree<F> for Blake2sIopTree<F> {
                         let base_idx = i*chunk;
                         for (j, lh) in lh.iter_mut().enumerate() {
                             let idx = base_idx + j;
-                            let leaf_ref = <Self::Combiner as CosetCombiner<F> >::get_leaf(&leafs, idx);
+                            let leaf_ref = <Self::Combiner as CosetCombiner<F> >::get_for_tree_index(&leafs, idx);
                             *lh = < Self::Hasher as IopTreeHasher<F> >::hash_leaf(leaf_ref);
                         }
                     });
@@ -233,9 +233,9 @@ impl<'a, F: PrimeField> IopTree<F> for Blake2sIopTree<F> {
         Self::encode_root_into_challenge(&root)
     }
 
-    fn verify(root: &<Self::Hasher as IopTreeHasher<F>>::HashOutput, leaf_value: &F, path: &[<Self::Hasher as IopTreeHasher<F>>::HashOutput], index: usize) -> bool {
+    fn verify(root: &<Self::Hasher as IopTreeHasher<F>>::HashOutput, leaf_value: &F, path: &[<Self::Hasher as IopTreeHasher<F>>::HashOutput], tree_index: usize) -> bool {
         let mut hash = <Self::Hasher as IopTreeHasher<F>>::hash_leaf(&leaf_value);
-        let mut idx = index;
+        let mut idx = tree_index;
         for el in path.iter() {
             if idx & 1usize == 0 {
                 hash = <Self::Hasher as IopTreeHasher<F>>::hash_node(&[hash, el.clone()], 0);
@@ -248,19 +248,21 @@ impl<'a, F: PrimeField> IopTree<F> for Blake2sIopTree<F> {
         &hash == root
     }
 
-    fn get_path(&self, index: usize, leafs_values: &[F]) -> Vec< <Self::Hasher as IopTreeHasher<F>>::HashOutput >{
+    fn get_path(&self, tree_index: usize, leafs_values: &[F]) -> Vec< <Self::Hasher as IopTreeHasher<F>>::HashOutput >{
         assert!(self.size == self.nodes.len() as u64);
         let mut nodes = &self.nodes[..];
 
-        let pair_index = index ^ 1usize;
+        let tree_pair_index = tree_index ^ 1usize;
 
         let mut path = vec![];
 
-        let pair = &leafs_values[pair_index as usize];
+        let pair_natural_index = <Self::Combiner as CosetCombiner<F>>::tree_index_into_natural_index(tree_pair_index);
+
+        let pair = &leafs_values[pair_natural_index as usize];
         let encoded_pair_hash = < Self::Hasher as IopTreeHasher<F> >::hash_leaf(pair);
         path.push(encoded_pair_hash);
 
-        let mut idx = index as usize;
+        let mut idx = tree_index;
         idx >>= 1;
 
         for _ in 0..log2_floor(nodes.len() / 2) {
@@ -295,8 +297,12 @@ impl<'i, F: PrimeField> IOP<F> for TrivialBlake2sIOP<F> {
         }
     }
 
-    fn get_combined(leafs: &[F], tree_index: usize) -> &F {
-        <Self::Combiner as CosetCombiner<F>>::get_leaf(leafs, tree_index)
+    fn get_for_natural_index(leafs: &[F], natural_index: usize) -> &F {
+        <Self::Combiner as CosetCombiner<F>>::get_for_natural_index(leafs, natural_index)
+    }
+
+    fn get_for_tree_index(leafs: &[F], tree_index: usize) -> &F {
+        <Self::Combiner as CosetCombiner<F>>::get_for_tree_index(leafs, tree_index)
     }
 
     fn get_root(&self) -> < <Self::Tree as IopTree<F> >::Hasher as IopTreeHasher<F>>::HashOutput {
@@ -315,15 +321,17 @@ impl<'i, F: PrimeField> IOP<F> for TrivialBlake2sIOP<F> {
         Self::Tree::verify(root, &query.value(), &query.path(), query.tree_index())
     }
 
-    fn query(&self, index: usize, leafs: &[F]) -> Self::Query {
-        assert!(index < self.tree.size() as usize);
-        assert!(index < leafs.len());
-        let value = leafs[index as usize];
+    fn query(&self, natural_index: usize, leafs: &[F]) -> Self::Query {
+        assert!(natural_index < self.tree.size() as usize);
+        assert!(natural_index < leafs.len());
+        let value = leafs[natural_index];
 
-        let path = self.tree.get_path(index, leafs);
+        let tree_index = <Self::Combiner as CosetCombiner<F>>::natural_index_into_tree_index(natural_index);
+
+        let path = self.tree.get_path(tree_index, leafs);
 
         TrivialBlake2sIopQuery::<F> {
-            index: index,
+            index: natural_index,
             value: value,
             path: path
         }
@@ -374,7 +382,7 @@ fn make_small_tree() {
 fn make_small_iop() {
     use crate::iop::IOP;
     use ff::Field;
-    const SIZE: usize = 4;
+    const SIZE: usize = 64;
     use crate::experiments::Fr;
     let mut inputs = vec![];
     let mut f = Fr::one();

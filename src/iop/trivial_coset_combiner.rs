@@ -19,8 +19,13 @@ impl<'c, F: PrimeField> CosetCombiner<F> for TrivialCombiner<F> {
     const COSET_SIZE: usize = 2usize;
 
     #[inline(always)] 
-    fn get_leaf(leafs: &[F], for_tree_index: usize) -> &F {
-        &leafs[for_tree_index]
+    fn get_for_natural_index(leafs: &[F], natural_index: usize) -> &F {
+        &leafs[natural_index]
+    }
+
+    #[inline(always)] 
+    fn get_for_tree_index(leafs: &[F], tree_index: usize) -> &F {
+        &leafs[tree_index]
     }
 
     fn get_coset_for_natural_index(natural_index: usize, domain_size: usize) -> Vec<usize> {

@@ -15,12 +15,7 @@ use indexmap::IndexSet as IndexSet;
 use indexmap::IndexMap as IndexMap;
 // use std::collections::{IndexSet, IndexMap};
 
-pub struct Verifier<F: PrimeField, T: Transcript<F>, I: IOP<F>, A: ARPType> {
-    instance: InstanceProperties<F>,
-    max_constraint_power: u64,
-    column_domain: Domain::<F>,
-    constraints_domain: Domain::<F>,
-    all_masks: IndexSet::<MaskProperties<F>>,
+struct InstancePoorf<F: PrimeField, T: Transcript<F>, I: IOP<F>, A: ARPType> {
     f_at_z_m: Vec<F>, 
     all_boundary_constrained_registers: IndexSet::<Register>,
     constraints_batched_by_density: IndexMap::< ConstraintDensity, Vec<Constraint<F>> >,
@@ -31,6 +26,16 @@ pub struct Verifier<F: PrimeField, T: Transcript<F>, I: IOP<F>, A: ARPType> {
     boundary_constraint_challenges: Vec<(F, F)>,
 
     _marker: std::marker::PhantomData<A>
+}
+
+pub struct Verifier<F: PrimeField, T: Transcript<F>, I: IOP<F>, A: ARPType> {
+    instance: InstanceProperties<F>,
+    max_constraint_power: u64,
+    column_domain: Domain::<F>,
+    constraints_domain: Domain::<F>,
+    all_masks: IndexSet::<MaskProperties<F>>,
+
+    instance_proof_to_work: Option<InstancePoorf<F, T, I, A>>
 }
 
 impl<F: PrimeField, T: Transcript<F>, I: IOP<F>> Verifier<F, T, I, PerRegisterARP> {

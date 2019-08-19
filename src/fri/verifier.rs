@@ -46,11 +46,12 @@ impl<'a, F: PrimeField, I: IOP<F>> NaiveFriIop<F, I> {
 
         for (iop_values, iop_challenge) in Some(leaf_values).into_iter().chain(&proof.intermediate_values)
                                         .zip(proof.intermediate_challenges.iter()) {
-            // let combiner = I::combine(iop_values.as_ref());
 
-            let natural_pair_index = (next_domain_idx + (domain_size / 2)) % domain_size;
+            let coset_values = <I::Combiner as CosetCombiner<F>>::get_coset_for_natural_index(next_domain_idx, domain_size);
 
-            let f_at_omega = I::get_combined(iop_values.as_ref(), natural_element_index);
+            assert!(coset_values.len() == 2);
+
+            let f_at_omega = I::get_for_natural_index(iop_values.as_ref(), coset_values[0]);
 
             if let Some(value) = expected_value {
                 // check in the next domain
@@ -59,8 +60,8 @@ impl<'a, F: PrimeField, I: IOP<F>> NaiveFriIop<F, I> {
                 }
             }
 
-            let f_at_minus_omega = I::get_combined(iop_values.as_ref(), natural_pair_index as usize);
-            let divisor = omega_inv.pow([next_domain_idx as u64]);
+            let f_at_minus_omega = I::get_for_natural_index(iop_values.as_ref(), coset_values[1]);
+            let divisor = omega_inv.pow([coset_values[0] as u64]);
 
             let mut v_even_coeffs = *f_at_omega;
             v_even_coeffs.add_assign(&f_at_minus_omega);
@@ -113,7 +114,7 @@ impl<'a, F: PrimeField, I: IOP<F>> NaiveFriIop<F, I> {
         proof: &FRIProof<F, I>,
         natural_element_index: usize,
         degree: usize, 
-        expected_value: F,
+        expected_value_from_oracle: F,
     ) -> Result<bool, SynthesisError> {
         let mut two = F::one();
         two.double();
@@ -143,7 +144,8 @@ impl<'a, F: PrimeField, I: IOP<F>> NaiveFriIop<F, I> {
             SynthesisError::DivisionByZero(format!("domain generator {} does not have an inverse", omega))
         )?;
 
-        let mut expected_value: Option<F> = Some(expected_value);
+
+        let mut expected_value: Option<F> = None;
         let mut domain_size = domain.size as usize;
         let mut next_domain_idx = natural_element_index;
 
@@ -151,15 +153,10 @@ impl<'a, F: PrimeField, I: IOP<F>> NaiveFriIop<F, I> {
             return Err(SynthesisError::InvalidValue("invalid number of queries".to_owned()));
         }
 
-        for (root, queries) in proof.roots.iter()
+        for (round, (root, queries)) in proof.roots.iter()
                                 .zip(proof.queries.chunks_exact(degree)) 
+                                .enumerate()
         {
-            for q in queries.iter() {
-                if !I::verify_query(&q, &root) {
-                    return Ok(false);
-                }
-            }
-
             let coset_values = <I::Combiner as CosetCombiner<F>>::get_coset_for_natural_index(next_domain_idx, domain_size);
 
             if coset_values.len() != <I::Combiner as CosetCombiner<F>>::COSET_SIZE {
@@ -172,8 +169,26 @@ impl<'a, F: PrimeField, I: IOP<F>> NaiveFriIop<F, I> {
                 }
             }
 
+            if round == 0 {
+                for q in queries.iter() {
+                    if q.natural_index() == natural_element_index && q.value() != expected_value_from_oracle {
+                        return Ok(false);
+                    }
+                }
+            }
+
             for (c, q) in coset_values.iter().zip(queries.iter()) {
+                let tree_index = <I::Combiner as CosetCombiner<F>>::natural_index_into_tree_index(*c);
+                if q.tree_index() != tree_index {
+                    return Err(SynthesisError::InvalidValue(format!("invalid tree index for element at natural index {}: expected {}, got {}", c, tree_index, q.tree_index())));
+                }
                 assert!(q.natural_index() == *c, "coset values and produced queries are expected to be sorted!");
+            }
+
+            for q in queries.iter() {
+                if !I::verify_query(&q, &root) {
+                    return Ok(false);
+                }
             }
             
             let iop_challenge = I::encode_root_into_challenge(root);
@@ -235,59 +250,3 @@ impl<'a, F: PrimeField, I: IOP<F>> NaiveFriIop<F, I> {
         Ok(expected_value_from_coefficients == expected_value)
     }
 }
-
-
-
-
-// #[test]
-// fn test_fib_conversion_into_by_values_fri() {
-//     use crate::Fr;
-//     use crate::air::Fibonacci;
-//     use crate::air::TestTraceSystem;
-//     use crate::air::IntoAIR;
-//     use crate::arp::*;
-//     use crate::ali::ALI;
-//     use crate::fft::multicore::Worker;
-//     use crate::ali::deep_ali::*;
-//     use crate::iop::blake2s_trivial_iop::TrivialBlake2sIOP;
-
-//     let fib = Fibonacci::<Fr> {
-//         final_b: Some(5),
-//         at_step: Some(3),
-//         _marker: std::marker::PhantomData
-//     };
-
-//     let mut test_tracer = TestTraceSystem::<Fr>::new();
-//     fib.trace(&mut test_tracer).expect("should work");
-//     test_tracer.calculate_witness(1, 1, 3);
-//     let mut arp = ARP::<Fr>::new(test_tracer);
-//     arp.route_into_single_witness_poly().expect("must work");
-
-//     let mut ali = ALI::from(arp);
-//     let alpha = Fr::from_str("123").unwrap();
-//     ali.calculate_g(alpha).expect("must work");
-
-//     let mut deep_ali = DeepALI::from(ali);
-//     let z = Fr::from_str("62").unwrap();
-
-//     let lde_factor = 8;
-
-//     let worker = Worker::new();
-
-//     println!("F poly size = {}", deep_ali.f_poly.size());
-//     println!("G poly size = {}", deep_ali.g_poly.size());
-
-//     let f_lde_values = deep_ali.f_poly.clone().lde(&worker, lde_factor).expect("must work");
-//     let g_lde_values = deep_ali.g_poly.clone().lde(&worker, lde_factor).expect("must work");
-
-//     deep_ali.make_deep(f_lde_values, g_lde_values, z).expect("must work");
-
-//     let h1_lde = deep_ali.h_1_poly.take().expect("is something");
-//     let h2_lde = deep_ali.h_2_poly.take().expect("is something");
-
-//     let h1_fri_proof = FRIIOP::<Fr, TrivialBlake2sIOP<Fr>>::proof_from_lde_by_values(&h1_lde, lde_factor, 1, &worker);
-//     let h2_fri_proof = FRIIOP::<Fr, TrivialBlake2sIOP<Fr>>::proof_from_lde_by_values(&h2_lde, lde_factor, 1, &worker);
-
-//     // println!("H1 = {:?}", deep_ali.h_1_poly);
-//     // println!("H2 = {:?}", deep_ali.h_2_poly);
-// }

@@ -286,6 +286,7 @@ fn test_fib_fri_iop_verifier() {
     let h2_fri_proof = NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>::proof_from_lde_by_values(&h2_lde, lde_factor, output_at_degree, &worker).expect("must work");
 
     let natural_x_index = 33;
+    // let natural_x_index = 1;
 
     {
         let valid = NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>::verify_prototype(
@@ -306,6 +307,8 @@ fn test_fib_fri_iop_verifier() {
 
         assert!(valid);
     }
+
+    println!("Making queries and true proofs");
 
     let proof_h1 = NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr> >::prototype_into_proof(
         h1_fri_proof,
