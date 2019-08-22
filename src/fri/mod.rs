@@ -9,11 +9,16 @@ pub mod fri_on_values;
 pub mod verifier;
 pub mod query_producer;
 
+pub trait FriProofPrototype<F: PrimeField, I: IOP<F>> {
+    fn get_roots(&self) -> Vec< < <I::Tree as IopTree<F> >::Hasher as IopTreeHasher<F>>::HashOutput>;
+    fn get_final_root(&self) -> < <I::Tree as IopTree<F> >::Hasher as IopTreeHasher<F>>::HashOutput;
+}
+
 pub trait FriIop<F: PrimeField> {
     const DEGREE: usize;
 
     type IopType: IOP<F>;
-    type ProofPrototype;
+    type ProofPrototype: FriProofPrototype<F, Self::IopType>;
     type Proof;
 
     fn proof_from_lde(
@@ -90,6 +95,22 @@ pub struct FRIProofPrototype<F: PrimeField, I: IOP<F>> {
     pub initial_degree_plus_one: usize,
     pub output_coeffs_at_degree_plus_one: usize,
     pub lde_factor: usize,
+}
+
+impl<F: PrimeField, I: IOP<F>> FriProofPrototype<F, I> for FRIProofPrototype<F, I> {
+    fn get_roots(&self) -> Vec< < <I::Tree as IopTree<F> >::Hasher as IopTreeHasher<F>>::HashOutput> {
+        let mut roots = vec![];
+        roots.push(self.l0_commitment.get_root().clone());
+        for c in self.intermediate_commitments.iter() {
+            roots.push(c.get_root().clone());
+        }
+
+        roots
+    }
+
+    fn get_final_root(&self) -> < <I::Tree as IopTree<F> >::Hasher as IopTreeHasher<F>>::HashOutput {
+        self.final_root.clone()
+    }
 }
 
 #[derive(PartialEq, Eq, Clone)]

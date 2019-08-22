@@ -24,6 +24,7 @@ pub mod iop;
 pub mod transcript;
 pub mod precomputations;
 pub mod verifier;
+pub mod prover;
 
 mod experiments;
 
