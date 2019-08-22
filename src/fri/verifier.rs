@@ -40,22 +40,30 @@ impl<'a, F: PrimeField, I: IOP<F>> NaiveFriIop<F, I> {
             SynthesisError::DivisionByZero(format!("domain generator {} does not have an inverse", omega))
         )?;
 
+        debug_assert_eq!(F::one(), omega_inv.pow([domain.size]));
+
         let mut expected_value: Option<F> = None;
         let mut domain_size = domain.size as usize;
-        let mut next_domain_idx = natural_element_index;
+        let mut domain_idx = natural_element_index;
 
         for (iop_values, iop_challenge) in Some(leaf_values).into_iter().chain(&proof.intermediate_values)
-                                        .zip(proof.intermediate_challenges.iter()) {
+                                        .zip(proof.challenges.iter()) {
 
-            let coset_values = <I::Combiner as CosetCombiner<F>>::get_coset_for_natural_index(next_domain_idx, domain_size);
+            let coset_values = <I::Combiner as CosetCombiner<F>>::get_coset_for_natural_index(domain_idx, domain_size);
 
             assert!(coset_values.len() == 2);
+            assert!(coset_values[0] < coset_values[1]);
 
             let f_at_omega = I::get_for_natural_index(iop_values.as_ref(), coset_values[0]);
 
             if let Some(value) = expected_value {
-                // check in the next domain
-                if *f_at_omega != value {
+                if !coset_values.contains(&domain_idx) {
+                    return Ok(false);
+                }
+
+                let supplied_value = *I::get_for_natural_index(iop_values.as_ref(), domain_idx);
+                // check consistency
+                if supplied_value != value {
                     return Ok(false);
                 }
             }
@@ -84,8 +92,15 @@ impl<'a, F: PrimeField, I: IOP<F>> NaiveFriIop<F, I> {
 
             expected_value = Some(tmp);
 
-            next_domain_idx = next_domain_idx % (domain_size / 2);
-            domain_size >>= 1;
+            // we have jumped in a coset and can keep it ordered using the smaller index out of two
+            // domain_idx = coset_values[0];
+
+            // debug_assert!(domain_idx < domain_size / 2);
+
+            let (next_idx, next_size) = Domain::<F>::index_and_size_for_next_domain(domain_idx, domain_size);
+
+            domain_idx = next_idx;
+            domain_size = next_size;
 
             omega.square();
             omega_inv.square();
@@ -96,18 +111,21 @@ impl<'a, F: PrimeField, I: IOP<F>> NaiveFriIop<F, I> {
 
         let mut expected_value_from_coefficients = F::zero();
         let mut power = F::one();
+        let evaluation_point = omega.pow([domain_idx as u64]);
 
         for c in proof.final_coefficients.iter() {
             let mut tmp = power;
             tmp.mul_assign(c);
 
             expected_value_from_coefficients.add_assign(&tmp);
-            power.mul_assign(&omega);
+            power.mul_assign(&evaluation_point);
         }
         
         let expected_value = expected_value.expect("is some");
 
-        Ok(expected_value_from_coefficients == expected_value)
+        let valid = expected_value_from_coefficients == expected_value;
+
+        Ok(valid)
     }
 
     pub fn verify_proof_queries(
@@ -147,7 +165,7 @@ impl<'a, F: PrimeField, I: IOP<F>> NaiveFriIop<F, I> {
 
         let mut expected_value: Option<F> = None;
         let mut domain_size = domain.size as usize;
-        let mut next_domain_idx = natural_element_index;
+        let mut domain_idx = natural_element_index;
 
         if proof.queries.len() % degree != 0 {
             return Err(SynthesisError::InvalidValue("invalid number of queries".to_owned()));
@@ -157,7 +175,7 @@ impl<'a, F: PrimeField, I: IOP<F>> NaiveFriIop<F, I> {
                                 .zip(proof.queries.chunks_exact(degree)) 
                                 .enumerate()
         {
-            let coset_values = <I::Combiner as CosetCombiner<F>>::get_coset_for_natural_index(next_domain_idx, domain_size);
+            let coset_values = <I::Combiner as CosetCombiner<F>>::get_coset_for_natural_index(domain_idx, domain_size);
 
             if coset_values.len() != <I::Combiner as CosetCombiner<F>>::COSET_SIZE {
                 return Err(SynthesisError::InvalidValue(format!("invalid coset size, expected {}, got {}", <I::Combiner as CosetCombiner<F>>::COSET_SIZE, coset_values.len())));
@@ -195,11 +213,23 @@ impl<'a, F: PrimeField, I: IOP<F>> NaiveFriIop<F, I> {
 
             let f_at_omega = (&queries[0]).value();
             if let Some(value) = expected_value {
+
+                if !coset_values.contains(&domain_idx) {
+                    return Ok(false);
+                }
+
+                let q: Vec<_> = queries.iter().filter(|el| el.natural_index() == domain_idx).collect();
+                if q.len() != 1 {
+                    return Ok(false)
+                }
+
+                let supplied_value = q[0].value();
                 // check in the next domain
-                if f_at_omega != value {
+                if supplied_value != value {
                     return Ok(false);
                 }
             }
+
             let f_at_minus_omega = (&queries[1]).value();
             let divisor = omega_inv.pow([coset_values[0] as u64]);
 
@@ -224,8 +254,13 @@ impl<'a, F: PrimeField, I: IOP<F>> NaiveFriIop<F, I> {
 
             expected_value = Some(tmp);
 
-            next_domain_idx = next_domain_idx % (domain_size / 2);
-            domain_size >>= 1;
+            // we have jumped in a coset and can keep it ordered using the smaller index out of two
+            // domain_idx = coset_values[0];
+
+            let (next_idx, next_size) = Domain::<F>::index_and_size_for_next_domain(domain_idx, domain_size);
+
+            domain_idx = next_idx;
+            domain_size = next_size;
 
             omega.square();
             omega_inv.square();
@@ -236,17 +271,20 @@ impl<'a, F: PrimeField, I: IOP<F>> NaiveFriIop<F, I> {
 
         let mut expected_value_from_coefficients = F::zero();
         let mut power = F::one();
+        let evaluation_point = omega.pow([domain_idx as u64]);
 
         for c in proof.final_coefficients.iter() {
             let mut tmp = power;
             tmp.mul_assign(c);
 
             expected_value_from_coefficients.add_assign(&tmp);
-            power.mul_assign(&omega);
+            power.mul_assign(&evaluation_point);
         }
         
         let expected_value = expected_value.expect("is some");
 
-        Ok(expected_value_from_coefficients == expected_value)
+        let valid = expected_value_from_coefficients == expected_value;
+
+        Ok(valid)
     }
 }

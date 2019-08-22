@@ -9,41 +9,143 @@ use crate::SynthesisError;
 use crate::air::*;
 use crate::ali::*;
 use crate::arp::mappings::*;
+use crate::fri::*;
 use byteorder::{BigEndian, ByteOrder};
 
 use indexmap::IndexSet as IndexSet;
 use indexmap::IndexMap as IndexMap;
 // use std::collections::{IndexSet, IndexMap};
 
-struct InstancePoorf<F: PrimeField, T: Transcript<F>, I: IOP<F>, A: ARPType> {
-    f_at_z_m: Vec<F>, 
-    all_boundary_constrained_registers: IndexSet::<Register>,
-    constraints_batched_by_density: IndexMap::< ConstraintDensity, Vec<Constraint<F>> >,
-    transcript: T,
-    f_iop_roots: Vec< < <I::Tree as IopTree<F> >::Hasher as IopTreeHasher<F>>::HashOutput >,
-    g_iop_root: < <I::Tree as IopTree<F> >::Hasher as IopTreeHasher<F>>::HashOutput,
-    constraint_challenges: Vec<(F, F)>,
-    boundary_constraint_challenges: Vec<(F, F)>,
-
-    _marker: std::marker::PhantomData<A>
+// ---------------------
+fn evaluate_constraint_on_f_at_z_m<F: PrimeField>(
+    constraint: &Constraint<F>,
+    witness: &Vec<IndexMap<StepDifference<F>, F>>,
+) -> Result<F, SynthesisError> {
+    let mut value = constraint.constant_term;
+    for term in constraint.terms.iter() {
+        let v = evaluate_term_on_f_at_z_m(&term, witness)?;
+        value.add_assign(&v);
+    }
+    
+    Ok(value)
 }
 
-pub struct Verifier<F: PrimeField, T: Transcript<F>, I: IOP<F>, A: ARPType> {
+fn evaluate_term_on_f_at_z_m<F: PrimeField>(
+    term: &ConstraintTerm<F>,
+    witness: &Vec<IndexMap<StepDifference<F>, F>>,
+) -> Result<F, SynthesisError> {
+    match term {
+        ConstraintTerm::Univariate(ref t) => {
+            evaluate_univariate_term_on_f_at_z_m(
+                t, 
+                &witness,
+            )
+        },
+        ConstraintTerm::Polyvariate(ref poly_term) => {
+            let mut result = F::one();
+            for t in poly_term.terms.iter() {
+                let v = evaluate_univariate_term_on_f_at_z_m(
+                    &t, 
+                    &witness,
+                )?;
+                result.mul_assign(&v);
+            }
+
+            result.mul_assign(&poly_term.coeff);
+
+            Ok(result)
+        }
+    }
+}
+
+fn evaluate_univariate_term_on_f_at_z_m<F: PrimeField>(
+    univariate_term: &UnivariateTerm<F>,
+    witness: &Vec<IndexMap<StepDifference<F>, F>>,
+) -> Result<F, SynthesisError> {
+    // let mask = match univariate_term.steps_difference {
+    //     StepDifference::Mask(mask) => mask,
+    //     _ => unreachable!()
+    // };
+
+    let reg_num = match univariate_term.register {
+        Register::Register(reg_num) => reg_num,
+        _ => unreachable!()
+    };
+
+    let f_at_z_m = witness[reg_num].get(&univariate_term.steps_difference).ok_or(
+        SynthesisError::Unsatisfied(format!("expecting value for term {:?} to be for register {} and step difference {:?}", univariate_term, reg_num, univariate_term.steps_difference))
+    )?;
+
+    let mut value = f_at_z_m.pow([univariate_term.power]);
+    value.mul_assign(&univariate_term.coeff);
+
+    Ok(value)
+}
+// ---------------------
+
+pub struct InstanceProof<F: PrimeField, T: Transcript<F>, I: IOP<F>, FRI: FriIop<F, IopType = I>, A: ARPType> {
+    f_at_z_m: Vec<F>, 
+    f_iop_roots: Vec< < <I::Tree as IopTree<F> >::Hasher as IopTreeHasher<F>>::HashOutput >,
+    g_iop_root: < <I::Tree as IopTree<F> >::Hasher as IopTreeHasher<F>>::HashOutput,
+
+    f_queries: Vec<I::Query>,
+    g_query: I::Query,
+
+    h1_iop_roots: Vec< < <I::Tree as IopTree<F> >::Hasher as IopTreeHasher<F>>::HashOutput >,
+    h2_iop_roots: Vec< < <I::Tree as IopTree<F> >::Hasher as IopTreeHasher<F>>::HashOutput >,
+
+    fri_proof_h1: FRI::Proof,
+    fri_proof_h2: FRI::Proof,
+
+
+    _marker_a: std::marker::PhantomData<A>,
+    _marker_t: std::marker::PhantomData<T>,
+}
+
+struct InstanceProofScratchSpace<F: PrimeField, T: Transcript<F>, I: IOP<F>, A: ARPType> {
+    transcript: T,
+    constraint_challenges: Vec<(F, F)>,
+    boundary_constraint_challenges: Vec<(F, F)>,
+    h1_poly_challenges: Vec<F>,
+
+    _marker_a: std::marker::PhantomData<A>,
+    _marker_i: std::marker::PhantomData<I>,
+}
+
+impl<F: PrimeField, T: Transcript<F>, I: IOP<F>, A: ARPType> InstanceProofScratchSpace<F, T, I, A> {
+    fn new() -> Self {
+        Self {
+            transcript: T::new(),
+            constraint_challenges: vec![],
+            boundary_constraint_challenges: vec![],
+            h1_poly_challenges: vec![],
+
+            _marker_a: std::marker::PhantomData,
+            _marker_i: std::marker::PhantomData,
+        }
+    }
+}
+
+pub struct Verifier<F: PrimeField, T: Transcript<F>, I: IOP<F>, FRI: FriIop<F, IopType = I>, A: ARPType> {
     instance: InstanceProperties<F>,
     max_constraint_power: u64,
     column_domain: Domain::<F>,
     constraints_domain: Domain::<F>,
     all_masks: IndexSet::<MaskProperties<F>>,
-
-    instance_proof_to_work: Option<InstancePoorf<F, T, I, A>>
+    all_boundary_constrained_registers: IndexSet::<Register>,
+    constraints_batched_by_density: IndexMap::< ConstraintDensity, Vec<Constraint<F>> >,
+    lde_factor: usize,
+        
+    _marker_a: std::marker::PhantomData<A>,
+    _marker_i: std::marker::PhantomData<I>,
+    _marker_t: std::marker::PhantomData<T>,
+    _marker_fri: std::marker::PhantomData<FRI>,
 }
 
-impl<F: PrimeField, T: Transcript<F>, I: IOP<F>> Verifier<F, T, I, PerRegisterARP> {
+impl<F: PrimeField, T: Transcript<F>, I: IOP<F>, FRI: FriIop<F, IopType = I>> Verifier<F, T, I, FRI, PerRegisterARP> {
     pub fn new(
         instance: InstanceProperties<F>, 
-        f_at_z_m: Vec<F>,
-        f_roots: Vec< < <I::Tree as IopTree<F> >::Hasher as IopTreeHasher<F> >::HashOutput >,
-        g_root: < <I::Tree as IopTree<F> >::Hasher as IopTreeHasher<F> >::HashOutput
+        lde_factor: usize,
         ) -> Result<Self, SynthesisError> {
 
         let num_rows = instance.num_rows as u64;
@@ -57,11 +159,6 @@ impl<F: PrimeField, T: Transcript<F>, I: IOP<F>> Verifier<F, T, I, PerRegisterAR
                 &mut c, 
                 &column_domain
             );
-        }
-
-        let mut transcript = T::new();
-        for r in f_roots.iter() {
-            transcript.commit_bytes(r.as_ref());
         }
 
         let mut all_masks: IndexSet::<MaskProperties<F>> = IndexSet::new();
@@ -107,29 +204,12 @@ impl<F: PrimeField, T: Transcript<F>, I: IOP<F>> Verifier<F, T, I, PerRegisterAR
         //     }
         // }
 
-        let mut constraint_challenges = vec![];
-
         for (_density, batch) in constraints_batched_by_density.iter() {
             for c in batch.iter()   {
                 let constraint_power = c.degree;
                 assert!(max_constraint_power >= constraint_power);
-                let alpha = transcript.get_challenge();
-                let beta = transcript.get_challenge();
-
-                constraint_challenges.push((alpha, beta));
             }
         }
-
-        let mut boundary_constraint_challenges = vec![];
-        for _ in instance.boundary_constraints.iter() {
-            let alpha = transcript.get_challenge();
-            let beta = transcript.get_challenge();
-
-            boundary_constraint_challenges.push((alpha, beta));
-        }
-
-        // We've collected all challenges for G calculation and now can commit G
-        transcript.commit_bytes(g_root.as_ref());
 
         Ok(Self {
             instance: instance,
@@ -137,37 +217,195 @@ impl<F: PrimeField, T: Transcript<F>, I: IOP<F>> Verifier<F, T, I, PerRegisterAR
             column_domain: column_domain,
             constraints_domain: constraints_domain,
             all_masks: all_masks,
-            f_at_z_m: f_at_z_m,
             all_boundary_constrained_registers: all_boundary_constrained_registers,
             constraints_batched_by_density: constraints_batched_by_density,
-            transcript: transcript,
-            f_iop_roots: f_roots,
-            g_iop_root: g_root,
-            constraint_challenges: constraint_challenges,
-            boundary_constraint_challenges: boundary_constraint_challenges,
+            lde_factor,
 
-            _marker: std::marker::PhantomData
+            _marker_a: std::marker::PhantomData,
+            _marker_i: std::marker::PhantomData,
+            _marker_t: std::marker::PhantomData,
+            _marker_fri: std::marker::PhantomData,
         })
     }
 
+    pub fn bytes_to_challenge_index<S: AsRef<[u8]>>(bytes: S, lde_size: usize, lde_factor: usize) -> usize {
+        let as_ref = bytes.as_ref();
+        let natural_x_index = BigEndian::read_u64(&as_ref[(as_ref.len() - 8)..]);
+
+        let natural_x_index = natural_x_index as usize;
+        let mut natural_x_index = natural_x_index % lde_size;
+        if natural_x_index % lde_factor == 0 {
+            natural_x_index += 1;
+            natural_x_index = natural_x_index % lde_size;
+        }
+
+        if natural_x_index % 2 == 0 {
+            natural_x_index += 1;
+            natural_x_index = natural_x_index % lde_size;
+        }
+
+        natural_x_index
+    }
+
+    pub fn verify(
+        &self,
+        proof: &InstanceProof<F, T, I, FRI, PerRegisterARP>
+    ) -> Result<bool, SynthesisError> {
+        let mut scratch_space: InstanceProofScratchSpace<F, T, I, PerRegisterARP> = InstanceProofScratchSpace::new();
+
+        for r in proof.f_iop_roots.iter() {
+            scratch_space.transcript.commit_bytes(r.as_ref());
+        }
+
+        for (_density, batch) in self.constraints_batched_by_density.iter() {
+            for _c in batch.iter()   {
+                let alpha = scratch_space.transcript.get_challenge();
+                let beta = scratch_space.transcript.get_challenge();
+
+                scratch_space.constraint_challenges.push((alpha, beta));
+            }
+        }
+
+        for _ in self.instance.boundary_constraints.iter() {
+            let alpha = scratch_space.transcript.get_challenge();
+            let beta = scratch_space.transcript.get_challenge();
+
+            scratch_space.boundary_constraint_challenges.push((alpha, beta));
+        }
+
+        // We've collected all challenges for G calculation and now can commit G
+        scratch_space.transcript.commit_bytes(proof.g_iop_root.as_ref());
+
+        let z = scratch_space.transcript.get_challenge();
+
+        for _ in self.all_masks.iter() {
+            let alpha = scratch_space.transcript.get_challenge();
+
+            scratch_space.h1_poly_challenges.push(alpha);
+        }
+
+        println!("Z in verifier = {}", z);
+
+        // println!("Final root for h1 in verifier = {:?}", proof.h1_iop_roots.last().expect("there is one").as_ref());
+        // println!("Final root for h1 in verifier = {:?}", proof.h2_iop_roots.last().expect("there is one").as_ref());
+
+        scratch_space.transcript.commit_bytes(proof.h1_iop_roots.last().expect("there is one").as_ref());
+        scratch_space.transcript.commit_bytes(proof.h2_iop_roots.last().expect("there is one").as_ref());
+
+        let f_lde_size = self.column_domain.size * (self.lde_factor as u64);
+        let g_lde_size = self.constraints_domain.size * (self.lde_factor as u64);
+
+        let f_lde_domain = Domain::<F>::new_for_size(f_lde_size)?;
+        let g_lde_domain = Domain::<F>::new_for_size(g_lde_size)?;
+
+        println!("Getting challenge indexes");
+
+        let x_challenge_index_h1 = Self::bytes_to_challenge_index(&scratch_space.transcript.get_challenge_bytes(), f_lde_size as usize, self.lde_factor);
+        let x_challenge_index_h2 = Self::bytes_to_challenge_index(&scratch_space.transcript.get_challenge_bytes(), g_lde_size as usize, self.lde_factor);
+
+        let mut f_ldes_at_x = vec![];
+
+        if proof.f_queries.len() != self.instance.num_registers {
+            return Err(SynthesisError::Unsatisfied(format!("expected number of registers = {}, proof contains queries only to {}", proof.f_queries.len(), self.instance.num_registers)));
+        }
+
+        if proof.f_queries.len() != proof.f_iop_roots.len() {
+            return Err(SynthesisError::Unsatisfied(format!("received {} queries to witness oracles, but only {} roots", proof.f_queries.len(), proof.f_iop_roots.len())));
+        }
+
+        for (query, root) in proof.f_queries.iter().zip(proof.f_iop_roots.iter()) {
+            if !I::verify_query(query, root) {
+                return Ok(false);
+            }
+            if query.natural_index() != x_challenge_index_h1 {
+                return Ok(false);
+            }
+            f_ldes_at_x.push(query.value());
+        }
+
+        println!("Simularing H1 part");
+
+        let h_1_at_x = self.simulate_h1_from_f_at_z(
+            &scratch_space.h1_poly_challenges, 
+            x_challenge_index_h1, 
+            &f_lde_domain, 
+            &f_ldes_at_x, 
+            &proof.f_at_z_m,
+            z
+        )?;
+
+        println!("Simulated H1 = {}", h_1_at_x);
+
+        println!("Calculating DEEP part");
+
+        let g_at_z_from_verifier = self.calculate_g_at_z_from_f_at_z(
+            &scratch_space,
+            &proof,
+            z
+        )?;
+
+        if !I::verify_query(&proof.g_query, &proof.g_iop_root) {
+            return Ok(false);
+        }
+        if proof.g_query.natural_index() != x_challenge_index_h2 {
+            return Ok(false);
+        }
+
+        let g_lde_at_x = proof.g_query.value();
+
+        println!("Simularing H2 part");
+
+        println!("G(z) from verifier = {}", g_at_z_from_verifier);
+
+        let h_2_at_x = self.simulate_h2_from_g_at_z(
+            x_challenge_index_h2, 
+            &g_lde_domain, 
+            g_lde_at_x,
+            z,
+            g_at_z_from_verifier
+        )?;
+
+        println!("Simulated H2 = {}", h_2_at_x);
+
+        // Now we need to check that H1 and H2 are indeed low degree polynomials
+        let valid = FRI::verify_proof(
+            &proof.fri_proof_h1,
+            x_challenge_index_h1,
+            h_1_at_x
+        )?;
+
+        if !valid {
+            return Ok(false);
+        }
+
+        let valid = FRI::verify_proof(
+            &proof.fri_proof_h2,
+            x_challenge_index_h2,
+            h_2_at_x
+        )?;
+
+        Ok(valid)
+    }
+
+
     fn simulate_h1_from_f_at_z (
         &self,
-        transcript: T,
+        mask_challenges: &[F],
         natural_x_index: usize,
         f_lde_domain: &Domain<F>,
         f_ldes_at_x: &[F],
+        f_at_z_m: &[F],
         z: F
     ) -> Result<F, SynthesisError> {
         let x = f_lde_domain.generator.pow(&[natural_x_index as u64]);
 
         let mut h_at_x = F::zero();
 
-        let mut transcript = transcript;
-
         // (f_i(x) - f(M*z)) / (x - M*z) = h_1(x)
 
-        for (m, f_at_z) in self.all_masks.iter()
-                    .zip(self.f_at_z_m.iter()) {
+        for ((m, f_at_z), alpha) in self.all_masks.iter()
+                    .zip(f_at_z_m.iter())
+                    .zip(mask_challenges.iter()) {
             let mut root = match m.steps_difference {
                 StepDifference::Mask(mask) => {
                     mask
@@ -200,8 +438,6 @@ impl<F: PrimeField, T: Transcript<F>, I: IOP<F>> Verifier<F, T, I, PerRegisterAR
             )?;
 
             num.mul_assign(&den_inv);
-
-            let alpha = transcript.get_challenge();
             num.mul_assign(&alpha);
 
             h_at_x.add_assign(&num);
@@ -239,82 +475,17 @@ impl<F: PrimeField, T: Transcript<F>, I: IOP<F>> Verifier<F, T, I, PerRegisterAR
 
     fn calculate_g_at_z_from_f_at_z (
         &self,
+        scratch_space: &InstanceProofScratchSpace<F, T, I, PerRegisterARP>,
+        proof: &InstanceProof<F, T, I, FRI, PerRegisterARP>,
         z: F
     ) -> Result<F, SynthesisError> {
         let mut g_at_z = F::zero();
         let num_registers = self.instance.num_registers;
 
-        // ---------------------
-        fn evaluate_constraint_on_f_at_z_m<F: PrimeField>(
-            constraint: &Constraint<F>,
-            witness: &Vec<IndexMap<StepDifference<F>, F>>,
-        ) -> Result<F, SynthesisError> {
-            let mut value = constraint.constant_term;
-            for term in constraint.terms.iter() {
-                let v = evaluate_term_on_f_at_z_m(&term, witness)?;
-                value.add_assign(&v);
-            }
-            
-            Ok(value)
-        }
-
-        fn evaluate_term_on_f_at_z_m<F: PrimeField>(
-            term: &ConstraintTerm<F>,
-            witness: &Vec<IndexMap<StepDifference<F>, F>>,
-        ) -> Result<F, SynthesisError> {
-            match term {
-                ConstraintTerm::Univariate(ref t) => {
-                    evaluate_univariate_term_on_f_at_z_m(
-                        t, 
-                        &witness,
-                    )
-                },
-                ConstraintTerm::Polyvariate(ref poly_term) => {
-                    let mut result = F::one();
-                    for t in poly_term.terms.iter() {
-                        let v = evaluate_univariate_term_on_f_at_z_m(
-                            &t, 
-                            &witness,
-                        )?;
-                        result.mul_assign(&v);
-                    }
-
-                    result.mul_assign(&poly_term.coeff);
-
-                    Ok(result)
-                }
-            }
-        }
-
-        fn evaluate_univariate_term_on_f_at_z_m<F: PrimeField>(
-            univariate_term: &UnivariateTerm<F>,
-            witness: &Vec<IndexMap<StepDifference<F>, F>>,
-        ) -> Result<F, SynthesisError> {
-            // let mask = match univariate_term.steps_difference {
-            //     StepDifference::Mask(mask) => mask,
-            //     _ => unreachable!()
-            // };
-
-            let reg_num = match univariate_term.register {
-                Register::Register(reg_num) => reg_num,
-                _ => unreachable!()
-            };
-
-            let f_at_z_m = witness[reg_num].get(&univariate_term.steps_difference).ok_or(
-                SynthesisError::Unsatisfied(format!("Expecting value for term {:?} to be for register {} and step difference {:?}", univariate_term, reg_num, univariate_term.steps_difference))
-            )?;
-
-            let mut value = f_at_z_m.pow([univariate_term.power]);
-            value.mul_assign(&univariate_term.coeff);
-
-            Ok(value)
-        }
-        // ---------------------
-
         let mut register_values_under_masks: Vec<IndexMap<StepDifference<F>, F>> = vec![IndexMap::new(); num_registers];
 
         for (m, f_at_z) in self.all_masks.iter()
-                    .zip(self.f_at_z_m.iter()) {
+                    .zip(proof.f_at_z_m.iter()) {
             let mut root = match m.steps_difference {
                 StepDifference::Mask(mask) => {
                     mask
@@ -337,7 +508,7 @@ impl<F: PrimeField, T: Transcript<F>, I: IOP<F>> Verifier<F, T, I, PerRegisterAR
             register_values_under_masks[reg_num].insert(m.steps_difference, *f_at_z);
         }
 
-        let mut constraint_challenges_iter = self.constraint_challenges.iter();
+        let mut constraint_challenges_iter = scratch_space.constraint_challenges.iter();
 
         for (density, batch) in self.constraints_batched_by_density.iter() {
             let (inverse_divisor, _) = match density {
@@ -386,7 +557,7 @@ impl<F: PrimeField, T: Transcript<F>, I: IOP<F>> Verifier<F, T, I, PerRegisterAR
             }
         }
 
-        let mut boundary_constraint_challenges_iter = self.boundary_constraint_challenges.iter();
+        let mut boundary_constraint_challenges_iter = scratch_space.boundary_constraint_challenges.iter();
 
         let current_step = StepDifference::Mask(F::one());
 
@@ -515,6 +686,7 @@ fn test_fib_full_verifier() {
     };
 
     let lde_factor = 16;
+    // let lde_factor = 4;
     let mut transcript = Blake2sTranscript::new();
 
     let worker = Worker::new();
@@ -538,11 +710,14 @@ fn test_fib_full_verifier() {
     }).collect();
 
     let f_oracles: Vec<_> = f_ldes.iter().map(|l|
-        Blake2sIopTree::create(l.as_ref())
+        TrivialBlake2sIOP::<Fr>::create(l.as_ref())
     ).collect(); 
 
+    let mut f_iop_roots = vec![];
     for o in f_oracles.iter() {
-        transcript.commit_bytes(&o.get_root()[..]);
+        let root = o.get_root();
+        transcript.commit_bytes(&root);
+        f_iop_roots.push(root);
     }
 
     let ali = ALIInstance::from_arp(arp, &worker).expect("is some");
@@ -551,10 +726,13 @@ fn test_fib_full_verifier() {
 
     let g_lde = g_poly_interpolant.clone().lde(&worker, lde_factor).expect("is something");
 
-    let g_oracle = Blake2sIopTree::create(g_lde.as_ref());
-    transcript.commit_bytes(&g_oracle.get_root());
+    let g_oracle = TrivialBlake2sIOP::create(g_lde.as_ref());
+    let g_iop_root = g_oracle.get_root();
+    transcript.commit_bytes(&g_iop_root);
 
-    let (h1_lde, h2_lde, f_at_z_m, g_at_z) = ali.calculate_deep(
+    println!("Calculating DEEP part");
+
+    let (h1_lde, h2_lde, f_at_z_m, _g_at_z) = ali.calculate_deep(
         &witness_polys,
         &f_ldes,
         &g_poly_interpolant,
@@ -563,123 +741,111 @@ fn test_fib_full_verifier() {
         &worker
     ).expect("must work");
 
-    // type FriProver = NaiveFriIop::<'_, Fr, TrivialBlake2sIOP<Fr>>;
-    //  as FRIIOP<'_, Fr>;
+    println!("G(z) from prover = {}", _g_at_z);
 
     let fri_final_poly_degree = 1;
 
+    println!("Calculating FRI part");
+
     let h1_fri_proof_proto = NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>::proof_from_lde(&h1_lde, lde_factor, fri_final_poly_degree, &worker).expect("must work");
     let h2_fri_proof_proto = NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>::proof_from_lde(&h2_lde, lde_factor, fri_final_poly_degree, &worker).expect("must work");
-    
-    let challenge_root_h1 = h1_fri_proof_proto.final_root;
 
-    let h1_lde_size = h1_lde.size();
+    let mut h1_iop_roots = vec![h1_fri_proof_proto.l0_commitment.get_root()];
 
-    let natural_x_index = BigEndian::read_u64(&challenge_root_h1[(challenge_root_h1.len() - 8)..]);
-
-    let natural_x_index = natural_x_index as usize;
-    let mut natural_x_index_h1 = natural_x_index % h1_lde_size;
-    if natural_x_index_h1 % lde_factor == 0 {
-        natural_x_index_h1 += 1;
-        natural_x_index_h1 = natural_x_index_h1 % h1_lde_size;
+    for c in h1_fri_proof_proto.intermediate_commitments.iter() {
+        h1_iop_roots.push(c.get_root().clone());
     }
 
-    if natural_x_index_h1 % 2 == 0 {
-        natural_x_index_h1 += 1;
-        natural_x_index_h1 = natural_x_index_h1 % h1_lde_size;
+    let mut h2_iop_roots = vec![h2_fri_proof_proto.l0_commitment.get_root()];
+
+    for c in h2_fri_proof_proto.intermediate_commitments.iter() {
+        h2_iop_roots.push(c.get_root().clone());
     }
 
-    let h1_fri_proof = NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>::prototype_into_proof(h1_fri_proof_proto, &h1_lde, natural_x_index_h1).expect("must work");
+    // println!("Final root for h1 = {:?}", h1_fri_proof_proto.final_root);
+    // println!("Final root for h1 = {:?}", h2_fri_proof_proto.final_root);
 
-    let challenge_root_h2 = h2_fri_proof_proto.final_root;
+    transcript.commit_bytes(&h1_fri_proof_proto.final_root);
+    transcript.commit_bytes(&h2_fri_proof_proto.final_root);
 
-    let h2_lde_size = h2_lde.size();
+    println!("Getting challenge indexes");
 
-    let natural_x_index = BigEndian::read_u64(&challenge_root_h2[(challenge_root_h2.len() - 8)..]);
+    let x_challenge_index_h1 = Verifier::<Fr, Blake2sTranscript<Fr>, TrivialBlake2sIOP<Fr>, NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>, PerRegisterARP>::bytes_to_challenge_index(
+        &transcript.get_challenge_bytes(), 
+        h1_lde.size(),
+        lde_factor
+    );
 
-    let natural_x_index = natural_x_index as usize;
-    let mut natural_x_index_h2 = natural_x_index % h2_lde_size;
-    if natural_x_index_h2 % lde_factor == 0 {
-        natural_x_index_h2 += 1;
-        natural_x_index_h2 = natural_x_index_h2 % h2_lde_size;
+    let x_challenge_index_h2 = Verifier::<Fr, Blake2sTranscript<Fr>, TrivialBlake2sIOP<Fr>, NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>, PerRegisterARP>::bytes_to_challenge_index(
+        &transcript.get_challenge_bytes(), 
+        h2_lde.size(),
+        lde_factor
+    );
+
+    {
+        let valid = NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>::verify_prototype(
+            &h1_fri_proof_proto,
+            &h1_lde,
+            x_challenge_index_h1
+        ).expect("must work");
+
+        assert!(valid);
     }
 
-    if natural_x_index_h2 % 2 == 0 {
-        natural_x_index_h2 += 1;
-        natural_x_index_h2 = natural_x_index_h2 % h2_lde_size;
+    {
+        let valid = NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>::verify_prototype(
+            &h2_fri_proof_proto,
+            &h2_lde,
+            x_challenge_index_h2
+        ).expect("must work");
+
+        assert!(valid);
     }
 
-    let h2_fri_proof = NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>::prototype_into_proof(h2_fri_proof_proto, &h2_lde, natural_x_index_h2).expect("must work");
+    let h1_fri_proof = NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>::prototype_into_proof(h1_fri_proof_proto, &h1_lde, x_challenge_index_h1).expect("must work");
+    let h2_fri_proof = NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>::prototype_into_proof(h2_fri_proof_proto, &h2_lde, x_challenge_index_h2).expect("must work");
+
+
+    let valid = NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>::verify_proof(&h1_fri_proof, x_challenge_index_h1, h1_lde.as_ref()[x_challenge_index_h1]).expect("must work");
+    assert!(valid);
 
     // All prover work is complete here 
 
-    let mut f_roots = vec![];
+    println!("Expected H1 = {}", h1_lde.as_ref()[x_challenge_index_h1]);
+    println!("Expected H2 = {}", h2_lde.as_ref()[x_challenge_index_h2]);
 
-    for o in f_oracles.iter() {
-        f_roots.push(o.get_root());
+    let mut f_queries = vec![];
+    for (o, lde) in f_oracles.iter().zip(f_ldes.iter()) {
+        f_queries.push(o.query(x_challenge_index_h1, lde.as_ref()));
     }
 
-    let g_root = g_oracle.get_root();
+    let g_query = g_oracle.query(x_challenge_index_h2, g_lde.as_ref());
 
-    let mut verifier = Verifier::<Fr, Blake2sTranscript<Fr>, TrivialBlake2sIOP<Fr>, PerRegisterARP>::new(
+    let proof = InstanceProof::<Fr, Blake2sTranscript<Fr>, TrivialBlake2sIOP<Fr>, NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>, PerRegisterARP>{
+        f_at_z_m: f_at_z_m, 
+        f_iop_roots: f_iop_roots,
+        g_iop_root: g_iop_root,
+
+        f_queries: f_queries,
+        g_query: g_query,
+
+        h1_iop_roots: h1_iop_roots,
+        h2_iop_roots: h2_iop_roots,
+
+        fri_proof_h1: h1_fri_proof,
+        fri_proof_h2: h2_fri_proof,
+
+        _marker_a: std::marker::PhantomData,
+        _marker_t: std::marker::PhantomData,
+    };
+
+    let verifier = Verifier::<Fr, Blake2sTranscript<Fr>, TrivialBlake2sIOP<Fr>, NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>, PerRegisterARP>::new(
         props, 
-        f_at_z_m,
-        f_roots,
-        g_root,
+        lde_factor
     ).expect("some verifier");
 
-    let mut f_ldes_at_x = vec![];
-    for f in f_ldes.iter() {
-        f_ldes_at_x.push(f.as_ref()[natural_x_index_h1]);
-    }
-
-    let z = verifier.transcript.get_challenge();
-
-    let f_lde_domain = Domain::<Fr>::new_for_size(f_ldes[0].size() as u64).expect("some domain");
-
-    let h_1_at_x = verifier.simulate_h1_from_f_at_z(
-        verifier.transcript.clone(), 
-        natural_x_index_h1, 
-        &f_lde_domain, 
-        &f_ldes_at_x, 
-        z
-    ).expect("some h_1 value");
-
-    assert_eq!(h_1_at_x, h1_lde.as_ref()[natural_x_index_h1], "h_1 simulation failed");
-
-    let g_at_z_from_verifier = verifier.calculate_g_at_z_from_f_at_z(z).expect("some g at z");
-
-    assert_eq!(g_at_z, g_at_z_from_verifier, "g at z is not the same in prover and verifier");
-
-    let g_lde_domain = Domain::<Fr>::new_for_size(g_lde.size() as u64).expect("some domain");
-
-    let g_lde_at_x = g_lde.as_ref()[natural_x_index_h2];
-
-    let h_2_at_x = verifier.simulate_h2_from_g_at_z(
-        natural_x_index_h2, 
-        &g_lde_domain, 
-        g_lde_at_x,
-        z,
-        g_at_z_from_verifier
-    ).expect("some h_2 value");
-
-    assert_eq!(h_2_at_x, h2_lde.as_ref()[natural_x_index_h2], "h_2 simulation failed");
-
-    // Now we need to check that H1 and H2 are indeed low degree polynomials
-
-    let valid = NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>::verify_proof(
-        &h1_fri_proof,
-        natural_x_index_h1,
-        h_1_at_x
-    ).expect("must work");
-
-    assert!(valid);
-
-    let valid = NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>::verify_proof(
-        &h2_fri_proof,
-        natural_x_index_h2,
-        h_2_at_x
-    ).expect("must work");
+    println!("Verifier starts");
+    let valid = verifier.verify(&proof).expect("must work");
 
     assert!(valid);
 }

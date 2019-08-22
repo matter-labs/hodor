@@ -13,7 +13,7 @@ impl<'a, F: PrimeField, I: IOP<F>> FRIProofPrototype<F, I> {
         natural_first_element_index: usize,
     ) -> Result<FRIProof<F, I>, SynthesisError> {
         let mut domain_size = self.initial_degree_plus_one * self.lde_factor;
-        let mut next_domain_idx = natural_first_element_index;
+        let mut domain_idx = natural_first_element_index;
 
         let mut queries = vec![];
         let mut roots = vec![];
@@ -21,7 +21,7 @@ impl<'a, F: PrimeField, I: IOP<F>> FRIProofPrototype<F, I> {
         for (iop, leaf_values) in Some(self.l0_commitment).iter().chain(&self.intermediate_commitments)
                                     .zip(Some(iop_values).into_iter().chain(&self.intermediate_values)) {
             
-            let coset_values = <I::Combiner as CosetCombiner<F>>::get_coset_for_natural_index(next_domain_idx, domain_size);
+            let coset_values = <I::Combiner as CosetCombiner<F>>::get_coset_for_natural_index(domain_idx, domain_size);
 
             if coset_values.len() != <I::Combiner as CosetCombiner<F>>::COSET_SIZE {
                 return Err(SynthesisError::InvalidValue(format!("invalid coset size, expected {}, got {}", <I::Combiner as CosetCombiner<F>>::COSET_SIZE, coset_values.len())));
@@ -34,8 +34,10 @@ impl<'a, F: PrimeField, I: IOP<F>> FRIProofPrototype<F, I> {
 
             roots.push(iop.get_root());
 
-            next_domain_idx = next_domain_idx % (domain_size / 2);
-            domain_size >>= 1;
+            let (next_idx, next_size) = Domain::<F>::index_and_size_for_next_domain(domain_idx, domain_size);
+
+            domain_idx = next_idx;
+            domain_size = next_size;
         }
 
         let proof = FRIProof::<F, I> {

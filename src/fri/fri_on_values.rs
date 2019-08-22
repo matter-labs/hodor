@@ -47,11 +47,10 @@ impl<'a, F: PrimeField, I: IOP<F>> NaiveFriIop<F, I> {
 
         let mut intermediate_commitments = vec![];
         let mut intermediate_values = vec![];
-        let mut intermediate_challenges = vec![];
+        let mut challenges = vec![];
         let mut next_domain_challenge = l0_commitment.get_challenge_scalar_from_root();
-        intermediate_challenges.push(next_domain_challenge);
+        challenges.push(next_domain_challenge);
         let mut next_domain_size = initial_domain_size / 2;
-        let mut stride = 1;
 
         let mut values_slice = lde_values.as_ref();
 
@@ -59,102 +58,103 @@ impl<'a, F: PrimeField, I: IOP<F>> NaiveFriIop<F, I> {
 
         let mut roots = vec![];
         
-        for _ in 0..num_steps {
+        for i in 0..num_steps {
+            // we step over 1, omega, omega^2, 
+            // then over 1, omega^2,
+            // etc.
+            let stride = 1 << i;
             let mut next_values = vec![F::zero(); next_domain_size];
 
             assert!(values_slice.len() == next_values.len() * 2);
 
             worker.scope(next_values.len(), |scope, chunk| {
-            for (i, v) in next_values.chunks_mut(chunk)
-                            .enumerate() {
-                scope.spawn(move |_| {
-                    let initial_k = i*chunk;
-                    for (j, v) in v.iter_mut().enumerate() {
-                        let idx = initial_k + j;
-                        let omega_idx = idx * stride;
-                        let f_at_omega = values_slice[idx];
-                        let f_at_minus_omega = values_slice[idx + next_domain_size];
+                for (i, v) in next_values.chunks_mut(chunk).enumerate() {
+                    scope.spawn(move |_| {
+                        let initial_k = i*chunk;
+                        for (j, v) in v.iter_mut().enumerate() {
+                            let idx = initial_k + j;
+                            debug_assert!(idx < next_domain_size);
+                            let omega_idx = idx * stride;
+                            let f_at_omega = values_slice[idx];
+                            let f_at_minus_omega = values_slice[idx + next_domain_size];
 
-                        let mut v_even_coeffs = f_at_omega;
-                        v_even_coeffs.add_assign(&f_at_minus_omega);
+                            let mut v_even_coeffs = f_at_omega;
+                            v_even_coeffs.add_assign(&f_at_minus_omega);
 
-                        let mut v_odd_coeffs = f_at_omega;
-                        v_odd_coeffs.sub_assign(&f_at_minus_omega);
-                        v_odd_coeffs.mul_assign(&omegas_inv_ref[omega_idx]);
+                            let mut v_odd_coeffs = f_at_omega;
+                            v_odd_coeffs.sub_assign(&f_at_minus_omega);
+                            v_odd_coeffs.mul_assign(&omegas_inv_ref[omega_idx]);
 
-                        // those can be treated as (doubled) evaluations of polynomials that
-                        // are themselves made only from even or odd coefficients of original poly 
-                        // (with reduction of degree by 2) on a domain of the size twice smaller
-                        // with an extra factor of "omega" in odd coefficients
+                            // those can be treated as (doubled) evaluations of polynomials that
+                            // are themselves made only from even or odd coefficients of original poly 
+                            // (with reduction of degree by 2) on a domain of the size twice smaller
+                            // with an extra factor of "omega" in odd coefficients
 
-                        // to do assemble FRI step we just need to add them with a random challenge
+                            // to do assemble FRI step we just need to add them with a random challenge
 
-                        let mut tmp = v_odd_coeffs;
-                        tmp.mul_assign(&next_domain_challenge);
-                        tmp.add_assign(&v_even_coeffs);
-                        tmp.mul_assign(&two_inv);
+                            let mut tmp = v_odd_coeffs;
+                            tmp.mul_assign(&next_domain_challenge);
+                            tmp.add_assign(&v_even_coeffs);
+                            tmp.mul_assign(&two_inv);
 
-                        *v = tmp;
-                    }
-                });
-            }
-        });
+                            *v = tmp;
+                        }
+                    });
+                }
+            });
 
-        let intermediate_iop = I::create(next_values.as_ref());
-        let root = intermediate_iop.get_root();
-        roots.push(root);
-        next_domain_challenge = intermediate_iop.get_challenge_scalar_from_root();
-        intermediate_challenges.push(next_domain_challenge);
-        next_domain_size /= 2;
-        stride *= 2;
+            let intermediate_iop = I::create(next_values.as_ref());
+            let root = intermediate_iop.get_root();
+            roots.push(root);
+            next_domain_challenge = intermediate_iop.get_challenge_scalar_from_root();
+            challenges.push(next_domain_challenge);
 
-        intermediate_commitments.push(intermediate_iop);
-        let next_values_as_poly = Polynomial::from_values(next_values)?;
-        intermediate_values.push(next_values_as_poly);
+            next_domain_size >>= 1;
 
-        values_slice = intermediate_values.last().expect("is something").as_ref();
-    }
+            intermediate_commitments.push(intermediate_iop);
+            let next_values_as_poly = Polynomial::from_values(next_values)?;
+            intermediate_values.push(next_values_as_poly);
 
-    // final challenge is not necessary
-    intermediate_challenges.pop().expect("will work");
+            values_slice = intermediate_values.last().expect("is something").as_ref();
+        }
 
-    let final_root = roots.pop().expect("will work");
+        // final challenge is not necessary
+        challenges.pop().expect("will work");
 
-    assert!(intermediate_challenges.len() == num_steps);
-    assert!(intermediate_commitments.len() == num_steps);
-    assert!(intermediate_values.len() == num_steps);
+        let final_root = roots.pop().expect("will work");
 
-    let final_poly_values = Polynomial::from_values(values_slice.to_vec())?;
-    let final_poly_coeffs = final_poly_values.ifft(&worker);
+        assert!(challenges.len() == num_steps);
+        assert!(intermediate_commitments.len() == num_steps);
+        assert!(intermediate_values.len() == num_steps);
 
-    let mut final_poly_coeffs = final_poly_coeffs.into_coeffs();
-    final_poly_coeffs.truncate(output_coeffs_at_degree_plus_one);
+        let final_poly_values = Polynomial::from_values(values_slice.to_vec())?;
+        let final_poly_coeffs = final_poly_values.ifft(&worker);
 
-    // println!("Final coeffs = {:?}", final_poly_coeffs.as_ref());
+        let mut final_poly_coeffs = final_poly_coeffs.into_coeffs();
 
-    // let mut degree_plus_one = final_poly_coeffs.size();
+        // let mut degree_plus_one = final_poly_coeffs.len();
+        // for v in final_poly_coeffs.iter().rev() {
+        //     if v.is_zero() {
+        //         degree_plus_one -= 1;
+        //     } else {
+        //         break;
+        //     }
+        // }
+        // assert!(output_coeffs_at_degree_plus_one >= degree_plus_one);
 
-    // for v in final_poly_coeffs.as_ref().iter().rev() {
-    //     if v.is_zero() {
-    //         degree_plus_one -= 1;
-    //     } else {
-    //         break;
-    //     }
-    // }
+        final_poly_coeffs.truncate(output_coeffs_at_degree_plus_one);
 
-    // println!("Degree = {}", degree_plus_one);
-
-    Ok(FRIProofPrototype {
-        l0_commitment,
-        intermediate_commitments,
-        intermediate_values,
-        intermediate_challenges,
-        final_root,
-        final_coefficients: final_poly_coeffs,
-        initial_degree_plus_one,
-        output_coeffs_at_degree_plus_one,
-        lde_factor,
-    })
+        Ok(FRIProofPrototype {
+            l0_commitment,
+            intermediate_commitments,
+            intermediate_values,
+            challenges,
+            final_root,
+            final_coefficients: final_poly_coeffs,
+            initial_degree_plus_one,
+            output_coeffs_at_degree_plus_one,
+            lde_factor,
+        })
 
     }
 }

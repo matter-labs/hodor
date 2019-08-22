@@ -55,7 +55,7 @@ pub trait IopTree<F: PrimeField> {
     fn get_path(&self, index: usize, leafs_values: &[F]) -> Vec< <Self::Hasher as IopTreeHasher<F>>::HashOutput >;
 }
 
-pub trait IopQuery<F: PrimeField>: 'static {
+pub trait IopQuery<F: PrimeField>: 'static + PartialEq + Eq + Clone {
     type Hasher: IopTreeHasher<F>;
 
     fn tree_index(&self) -> usize;

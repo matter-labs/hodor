@@ -10,7 +10,6 @@ pub struct PrecomputedOmegas<F: PrimeField> {
     pub omegas_inv: Vec<F>,
 }
 
-
 impl<F: PrimeField> PrecomputedOmegas<F> {
     pub fn new_for_domain(domain: &Domain<F>, worker: &Worker) -> Self {
         let domain_size = domain.size as usize;
@@ -59,11 +58,9 @@ impl<F: PrimeField> PrecomputedOmegas<F> {
             }
         });
 
-        // distribute_powers(&mut coset, &worker, F::multiplicative_generator());
-
         PrecomputedOmegas{
             omegas,
-            coset: coset,
+            coset,
             omegas_inv
         }
     }

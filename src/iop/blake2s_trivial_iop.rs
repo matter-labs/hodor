@@ -338,7 +338,15 @@ impl<'i, F: PrimeField> IOP<F> for TrivialBlake2sIOP<F> {
     }
 }
 
-#[derive(Clone, Debug)]
+impl<F: PrimeField> PartialEq for TrivialBlake2sIOP<F> {
+    fn eq(&self, other: &Self) -> bool {
+        self.get_root() == other.get_root()
+    }
+}
+
+impl<F: PrimeField> Eq for TrivialBlake2sIOP<F> {}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TrivialBlake2sIopQuery<F: PrimeField> {
     index: usize,
     value: F,

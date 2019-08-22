@@ -15,6 +15,7 @@ pub trait Transcript<F: PrimeField>: Sized + Clone + 'static {
     fn new() -> Self;
     fn commit_bytes(&mut self, bytes: &[u8]);
     fn commit_field_element(&mut self, element: &F);
+    fn get_challenge_bytes(&mut self) -> Vec<u8>;
     fn get_challenge(&mut self) -> F;
 }
 
@@ -48,6 +49,13 @@ impl<F: PrimeField> Transcript<F> for Blake2sTranscript<F> {
         let mut bytes: Vec<u8> = vec![0u8; Self::REPR_SIZE];
         repr.write_be(&mut bytes[..]).expect("should write");
         self.state.update(&bytes[..]);
+    }
+
+    fn get_challenge_bytes(&mut self) -> Vec<u8> {
+        let value = *(self.state.finalize().as_array());
+        self.state.update(&value[..]);
+
+        Vec::from(&value[..])
     }
 
     fn get_challenge(&mut self) -> F {
