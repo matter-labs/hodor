@@ -362,8 +362,6 @@ impl<F: PrimeField, T: Transcript<F>, I: IOP<F>, P: FriProofPrototype<F, I>, FRI
             g_at_z_from_verifier
         )?;
 
-        println!("Simulated H2 = {}", h_2_at_x);
-
         // Now we need to check that H1 and H2 are indeed low degree polynomials
         let valid = FRI::verify_proof(
             &proof.fri_proof_h1,
