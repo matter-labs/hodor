@@ -354,3 +354,54 @@ fn try_prove_cubic_vdf() {
     println!("Total proving time with FRI is {} ms", total_start.elapsed().as_millis());
 
 }
+
+#[test]
+fn test_cubic_vdf_high_level_prover() {
+    use std::time::Instant;
+    use crate::iop::blake2s_trivial_iop::TrivialBlake2sIOP;
+    use crate::fri::*;
+    use crate::transcript::*;
+    use crate::ali::per_register::*;
+    use crate::prover::*;
+    use crate::verifier::*;
+
+    let vdf_instance = CubicVDF::<Fr> {
+        start_c0: Fr::one(),
+        start_c1: Fr::one(),
+        num_operations: (1 << 20) - 1
+    };
+
+    let start = Instant::now();
+    let (witness, props) = vdf_instance.into_arp();
+    println!("Done preraping and calculating VFD in {} ms", start.elapsed().as_millis());
+
+    let witness = witness.expect("some witness");
+
+    let lde_factor = 16;
+    let output_at_degree_plus_one = 1;
+
+
+    let start = Instant::now();
+    let prover = Prover::<Fr, Blake2sTranscript<Fr>, TrivialBlake2sIOP<Fr>, FRIProofPrototype<Fr, TrivialBlake2sIOP<Fr>>, NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>, PerRegisterARP>::new(
+        props.clone(), 
+        lde_factor,
+        output_at_degree_plus_one
+    ).expect("must work");
+    println!("Prover initialization in {} ms", start.elapsed().as_millis());
+
+    let start = Instant::now();
+    let proof = prover.prove(witness).expect("must work");
+    println!("Prove generation in {} ms", start.elapsed().as_millis());
+
+    let start = Instant::now();
+    let verifier = Verifier::<Fr, Blake2sTranscript<Fr>, TrivialBlake2sIOP<Fr>, FRIProofPrototype<Fr, TrivialBlake2sIOP<Fr>>, NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>, PerRegisterARP>::new(
+        props, 
+        lde_factor
+    ).expect("some verifier");
+    println!("Prove verification in {} ms", start.elapsed().as_millis());
+
+    println!("Verifier starts");
+    let valid = verifier.verify(&proof).expect("must work");
+
+    assert!(!valid);
+}

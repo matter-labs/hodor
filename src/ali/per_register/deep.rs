@@ -22,8 +22,6 @@ impl<F: PrimeField> ALIInstance<F, PerRegisterARP> {
     ) -> Result<(Polynomial<F, Values>, Polynomial<F, Values>, Vec<F>, F), SynthesisError> {
         let z = transcript.get_challenge();
 
-        println!("Z in prover = {}", z);
-
         let f_lde_size = (&f_ldes[0]).size();
         let g_lde_size = g_lde.size();
         let mut divisors_for_masks: IndexMap<StepDifference<F>, Polynomial<F, Values>> = IndexMap::new();

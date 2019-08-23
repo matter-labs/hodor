@@ -91,8 +91,6 @@ impl<F: PrimeField, T: Transcript<F>, I: IOP<F>, P: FriProofPrototype<F, I>, FRI
             &self.worker
         )?;
 
-        println!("G(z) from prover = {}", _g_at_z);
-
         let fri_final_poly_degree = self.fri_final_degree_plus_one;
 
         println!("Calculating FRI part");
@@ -245,8 +243,6 @@ fn test_soundness_of_fib_prover() {
         lde_factor,
         output_at_degree_plus_one
     ).expect("must work");
-
-
 
     let proof = prover.prove(witness).expect("must work");
 

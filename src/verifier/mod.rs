@@ -287,8 +287,6 @@ impl<F: PrimeField, T: Transcript<F>, I: IOP<F>, P: FriProofPrototype<F, I>, FRI
             scratch_space.h1_poly_challenges.push(alpha);
         }
 
-        println!("Z in verifier = {}", z);
-
         // println!("Final root for h1 in verifier = {:?}", proof.h1_iop_roots.last().expect("there is one").as_ref());
         // println!("Final root for h1 in verifier = {:?}", proof.h2_iop_roots.last().expect("there is one").as_ref());
 
@@ -337,8 +335,6 @@ impl<F: PrimeField, T: Transcript<F>, I: IOP<F>, P: FriProofPrototype<F, I>, FRI
             z
         )?;
 
-        println!("Simulated H1 = {}", h_1_at_x);
-
         println!("Calculating DEEP part");
 
         let g_at_z_from_verifier = self.calculate_g_at_z_from_f_at_z(
@@ -357,8 +353,6 @@ impl<F: PrimeField, T: Transcript<F>, I: IOP<F>, P: FriProofPrototype<F, I>, FRI
         let g_lde_at_x = proof.g_query.value();
 
         println!("Simularing H2 part");
-
-        println!("G(z) from verifier = {}", g_at_z_from_verifier);
 
         let h_2_at_x = self.simulate_h2_from_g_at_z(
             x_challenge_index_h2, 
