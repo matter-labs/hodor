@@ -8,6 +8,7 @@ description = "Implementation of Stark proof system engine"
 documentation = "https://github.com/shamatar/hodor"
 homepage = "https://github.com/shamatar/hodor"
 repository = "https://github.com/shamatar/hodor"
+publish = false
 
 [dependencies]
 rand = "0.4"
