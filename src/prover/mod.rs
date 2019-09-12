@@ -14,7 +14,7 @@ use crate::fri::*;
 use crate::SynthesisError;
 use crate::verifier::*;
 
-pub struct Prover<F: PrimeField, T: Transcript<F>, I: IOP<F>, P: FriProofPrototype<F, I>, FRI: FriIop<F, IopType = I, ProofPrototype = P>, A: ARPType> {
+pub struct Prover<F: PrimeField, T: Transcript<F>, I: IOP<F>, P: FriProofPrototype<F, I>, PR: FriProof<F, I>, FRI: FriIop<F, IopType = I, ProofPrototype = P, Proof = PR>, A: ARPType> {
     arp: ARPInstance::<F, A>,
     ali: ALIInstance::<F, A>,
     lde_factor: usize,
@@ -24,11 +24,12 @@ pub struct Prover<F: PrimeField, T: Transcript<F>, I: IOP<F>, P: FriProofPrototy
     _marker_t: std::marker::PhantomData<T>,
     _marker_i: std::marker::PhantomData<I>,
     _marker_p: std::marker::PhantomData<P>,
+    _marker_pr: std::marker::PhantomData<PR>,
     _marker_fri: std::marker::PhantomData<FRI>,
 
 }
 
-impl<F: PrimeField, T: Transcript<F>, I: IOP<F>, P: FriProofPrototype<F, I>, FRI: FriIop<F, IopType = I, ProofPrototype = P> > Prover<F, T, I, P, FRI, PerRegisterARP> {
+impl<F: PrimeField, T: Transcript<F>, I: IOP<F>, P: FriProofPrototype<F, I>, PR: FriProof<F, I>, FRI: FriIop<F, IopType = I, ProofPrototype = P, Proof = PR> > Prover<F, T, I, P, PR, FRI, PerRegisterARP> {
 
     pub fn new(instance: InstanceProperties<F>, lde_factor: usize, fri_final_degree_plus_one: usize) -> Result<Self, SynthesisError> {
         let worker = Worker::new();
@@ -45,11 +46,12 @@ impl<F: PrimeField, T: Transcript<F>, I: IOP<F>, P: FriProofPrototype<F, I>, FRI
             _marker_t: std::marker::PhantomData,
             _marker_i: std::marker::PhantomData,
             _marker_p: std::marker::PhantomData,
+            _marker_pr: std::marker::PhantomData,
             _marker_fri: std::marker::PhantomData,
         })
     }
 
-    pub fn prove(&self, witness: Vec<Vec<F>>) -> Result<InstanceProof<F, T, I, P, FRI, PerRegisterARP>, SynthesisError> {
+    pub fn prove(&self, witness: Vec<Vec<F>>) -> Result<InstanceProof<F, T, I, P, PR, FRI, PerRegisterARP>, SynthesisError> {
         let mut transcript = T::new();
 
         let witness_polys = self.arp.calculate_witness_polys(witness, &self.worker)?;
@@ -101,16 +103,24 @@ impl<F: PrimeField, T: Transcript<F>, I: IOP<F>, P: FriProofPrototype<F, I>, FRI
         let h1_iop_roots = h1_fri_proof_proto.get_roots();
         let h2_iop_roots = h2_fri_proof_proto.get_roots();
 
-        transcript.commit_bytes(&h1_fri_proof_proto.get_final_root().as_ref());
-        transcript.commit_bytes(&h2_fri_proof_proto.get_final_root().as_ref());
+        // TODO: we can also potentially commit intermediate roots
 
-        let x_challenge_index_h1 = Verifier::<F, T, I, P, FRI, PerRegisterARP>::bytes_to_challenge_index(
+        transcript.commit_bytes(&h1_fri_proof_proto.get_final_root().as_ref());
+        for el in h1_fri_proof_proto.get_final_coefficients().into_iter() {
+            transcript.commit_field_element(&el);
+        }
+        transcript.commit_bytes(&h2_fri_proof_proto.get_final_root().as_ref());
+        for el in h2_fri_proof_proto.get_final_coefficients().into_iter() {
+            transcript.commit_field_element(&el);
+        }
+
+        let x_challenge_index_h1 = Verifier::<F, T, I, P, PR, FRI, PerRegisterARP>::bytes_to_challenge_index(
             &transcript.get_challenge_bytes(), 
             h1_lde.size(),
             self.lde_factor
         );
 
-        let x_challenge_index_h2 = Verifier::<F, T, I, P, FRI, PerRegisterARP>::bytes_to_challenge_index(
+        let x_challenge_index_h2 = Verifier::<F, T, I, P, PR, FRI, PerRegisterARP>::bytes_to_challenge_index(
             &transcript.get_challenge_bytes(), 
             h2_lde.size(),
             self.lde_factor
@@ -128,7 +138,7 @@ impl<F: PrimeField, T: Transcript<F>, I: IOP<F>, P: FriProofPrototype<F, I>, FRI
 
         let g_query = g_oracle.query(x_challenge_index_h2, g_lde.as_ref());
 
-        let proof = InstanceProof::<F, T, I, P, FRI, PerRegisterARP> {
+        let proof = InstanceProof::<F, T, I, P, PR, FRI, PerRegisterARP> {
             f_at_z_m: f_at_z_m, 
             f_iop_roots: f_iop_roots,
             g_iop_root: g_iop_root,
@@ -145,6 +155,7 @@ impl<F: PrimeField, T: Transcript<F>, I: IOP<F>, P: FriProofPrototype<F, I>, FRI
             _marker_a: std::marker::PhantomData,
             _marker_t: std::marker::PhantomData,
             _marker_p: std::marker::PhantomData,
+            _marker_fri: std::marker::PhantomData,
         };
 
         Ok(proof)
@@ -182,7 +193,7 @@ fn test_fib_prover() {
     let lde_factor = 16;
     let output_at_degree_plus_one = 1;
 
-    let prover = Prover::<Fr, Blake2sTranscript<Fr>, TrivialBlake2sIOP<Fr>, FRIProofPrototype<Fr, TrivialBlake2sIOP<Fr>>, NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>, PerRegisterARP>::new(
+    let prover = Prover::<Fr, Blake2sTranscript<Fr>, TrivialBlake2sIOP<Fr>, FRIProofPrototype<Fr, TrivialBlake2sIOP<Fr>>, FRIProof<Fr, TrivialBlake2sIOP<Fr>>, NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>, PerRegisterARP>::new(
         props.clone(), 
         lde_factor,
         output_at_degree_plus_one
@@ -192,7 +203,7 @@ fn test_fib_prover() {
 
     let proof = prover.prove(witness).expect("must work");
 
-    let verifier = Verifier::<Fr, Blake2sTranscript<Fr>, TrivialBlake2sIOP<Fr>, FRIProofPrototype<Fr, TrivialBlake2sIOP<Fr>>, NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>, PerRegisterARP>::new(
+    let verifier = Verifier::<Fr, Blake2sTranscript<Fr>, TrivialBlake2sIOP<Fr>, FRIProofPrototype<Fr, TrivialBlake2sIOP<Fr>>, FRIProof<Fr, TrivialBlake2sIOP<Fr>>, NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>, PerRegisterARP>::new(
         props, 
         lde_factor
     ).expect("some verifier");
@@ -238,7 +249,7 @@ fn test_soundness_of_fib_prover() {
     let lde_factor = 16;
     let output_at_degree_plus_one = 1;
 
-    let prover = Prover::<Fr, Blake2sTranscript<Fr>, TrivialBlake2sIOP<Fr>, FRIProofPrototype<Fr, TrivialBlake2sIOP<Fr>>, NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>, PerRegisterARP>::new(
+    let prover = Prover::<Fr, Blake2sTranscript<Fr>, TrivialBlake2sIOP<Fr>, FRIProofPrototype<Fr, TrivialBlake2sIOP<Fr>>, FRIProof<Fr, TrivialBlake2sIOP<Fr>>, NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>, PerRegisterARP>::new(
         props.clone(), 
         lde_factor,
         output_at_degree_plus_one
@@ -246,7 +257,7 @@ fn test_soundness_of_fib_prover() {
 
     let proof = prover.prove(witness).expect("must work");
 
-    let verifier = Verifier::<Fr, Blake2sTranscript<Fr>, TrivialBlake2sIOP<Fr>, FRIProofPrototype<Fr, TrivialBlake2sIOP<Fr>>, NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>, PerRegisterARP>::new(
+    let verifier = Verifier::<Fr, Blake2sTranscript<Fr>, TrivialBlake2sIOP<Fr>, FRIProofPrototype<Fr, TrivialBlake2sIOP<Fr>>, FRIProof<Fr, TrivialBlake2sIOP<Fr>>, NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>, PerRegisterARP>::new(
         props, 
         lde_factor
     ).expect("some verifier");

@@ -2,6 +2,8 @@ pub(crate) mod vdf;
 pub(crate) mod cubic_vdf;
 mod square_root_calculator;
 
+mod tensor_lde;
+
 use ff::*;
 
 #[derive(PrimeField)]

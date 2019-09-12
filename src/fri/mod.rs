@@ -12,6 +12,11 @@ pub mod query_producer;
 pub trait FriProofPrototype<F: PrimeField, I: IOP<F>> {
     fn get_roots(&self) -> Vec< < <I::Tree as IopTree<F> >::Hasher as IopTreeHasher<F>>::HashOutput>;
     fn get_final_root(&self) -> < <I::Tree as IopTree<F> >::Hasher as IopTreeHasher<F>>::HashOutput;
+    fn get_final_coefficients(&self) -> Vec<F>;
+}
+
+pub trait FriProof<F: PrimeField, I: IOP<F>> {
+    fn get_final_coefficients(&self) -> &[F];
 }
 
 pub trait FriIop<F: PrimeField> {
@@ -19,7 +24,7 @@ pub trait FriIop<F: PrimeField> {
 
     type IopType: IOP<F>;
     type ProofPrototype: FriProofPrototype<F, Self::IopType>;
-    type Proof;
+    type Proof: FriProof<F, Self::IopType>;
 
     fn proof_from_lde(
         lde_values: &Polynomial<F, Values>, 
@@ -111,6 +116,10 @@ impl<F: PrimeField, I: IOP<F>> FriProofPrototype<F, I> for FRIProofPrototype<F, 
     fn get_final_root(&self) -> < <I::Tree as IopTree<F> >::Hasher as IopTreeHasher<F>>::HashOutput {
         self.final_root.clone()
     }
+
+    fn get_final_coefficients(&self) -> Vec<F> {
+        self.final_coefficients.clone()
+    }
 }
 
 #[derive(PartialEq, Eq, Clone)]
@@ -121,6 +130,12 @@ pub struct FRIProof<F: PrimeField, I: IOP<F>> {
     pub initial_degree_plus_one: usize,
     pub output_coeffs_at_degree_plus_one: usize,
     pub lde_factor: usize,
+}
+
+impl<F: PrimeField, I: IOP<F>> FriProof<F, I> for FRIProof<F, I> {
+    fn get_final_coefficients(&self) -> &[F] {
+        &self.final_coefficients
+    }
 }
 
 impl<'a, F: PrimeField, I: IOP<F>> NaiveFriIop<F, I> {

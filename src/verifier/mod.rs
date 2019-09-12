@@ -83,7 +83,7 @@ fn evaluate_univariate_term_on_f_at_z_m<F: PrimeField>(
 }
 // ---------------------
 
-pub struct InstanceProof<F: PrimeField, T: Transcript<F>, I: IOP<F>, P: FriProofPrototype<F, I>, FRI: FriIop<F, IopType = I, ProofPrototype = P>, A: ARPType> {
+pub struct InstanceProof<F: PrimeField, T: Transcript<F>, I: IOP<F>, P: FriProofPrototype<F, I>, PR: FriProof<F, I>, FRI: FriIop<F, IopType = I, ProofPrototype = P, Proof = PR>, A: ARPType> {
     pub f_at_z_m: Vec<F>, 
     pub f_iop_roots: Vec< < <I::Tree as IopTree<F> >::Hasher as IopTreeHasher<F>>::HashOutput >,
     pub g_iop_root: < <I::Tree as IopTree<F> >::Hasher as IopTreeHasher<F>>::HashOutput,
@@ -94,13 +94,14 @@ pub struct InstanceProof<F: PrimeField, T: Transcript<F>, I: IOP<F>, P: FriProof
     pub h1_iop_roots: Vec< < <I::Tree as IopTree<F> >::Hasher as IopTreeHasher<F>>::HashOutput >,
     pub h2_iop_roots: Vec< < <I::Tree as IopTree<F> >::Hasher as IopTreeHasher<F>>::HashOutput >,
 
-    pub fri_proof_h1: FRI::Proof,
-    pub fri_proof_h2: FRI::Proof,
+    pub fri_proof_h1: PR,
+    pub fri_proof_h2: PR,
 
 
     pub _marker_a: std::marker::PhantomData<A>,
     pub _marker_t: std::marker::PhantomData<T>,
     pub _marker_p: std::marker::PhantomData<P>,
+    pub _marker_fri: std::marker::PhantomData<FRI>,
 }
 
 struct InstanceProofScratchSpace<F: PrimeField, T: Transcript<F>, I: IOP<F>, A: ARPType> {
@@ -127,7 +128,7 @@ impl<F: PrimeField, T: Transcript<F>, I: IOP<F>, A: ARPType> InstanceProofScratc
     }
 }
 
-pub struct Verifier<F: PrimeField, T: Transcript<F>, I: IOP<F>, P: FriProofPrototype<F, I>, FRI: FriIop<F, IopType = I, ProofPrototype = P>, A: ARPType> {
+pub struct Verifier<F: PrimeField, T: Transcript<F>, I: IOP<F>, P: FriProofPrototype<F, I>, PR: FriProof<F, I>, FRI: FriIop<F, IopType = I, ProofPrototype = P, Proof = PR>, A: ARPType> {
     instance: InstanceProperties<F>,
     max_constraint_power: u64,
     column_domain: Domain::<F>,
@@ -144,11 +145,11 @@ pub struct Verifier<F: PrimeField, T: Transcript<F>, I: IOP<F>, P: FriProofProto
     _marker_fri: std::marker::PhantomData<FRI>,
 }
 
-impl<F: PrimeField, T: Transcript<F>, I: IOP<F>, P: FriProofPrototype<F, I>, FRI: FriIop<F, IopType = I, ProofPrototype = P>> Verifier<F, T, I, P, FRI, PerRegisterARP> {
+impl<F: PrimeField, T: Transcript<F>, I: IOP<F>, P: FriProofPrototype<F, I>, PR: FriProof<F, I>, FRI: FriIop<F, IopType = I, ProofPrototype = P, Proof = PR>> Verifier<F, T, I, P, PR, FRI, PerRegisterARP> {
     pub fn new(
         instance: InstanceProperties<F>, 
         lde_factor: usize,
-        ) -> Result<Self, SynthesisError> {
+    ) -> Result<Self, SynthesisError> {
 
         let num_rows = instance.num_rows as u64;
         let num_rows_sup = num_rows.next_power_of_two();
@@ -252,7 +253,7 @@ impl<F: PrimeField, T: Transcript<F>, I: IOP<F>, P: FriProofPrototype<F, I>, FRI
 
     pub fn verify(
         &self,
-        proof: &InstanceProof<F, T, I, P, FRI, PerRegisterARP>
+        proof: &InstanceProof<F, T, I, P, PR, FRI, PerRegisterARP>
     ) -> Result<bool, SynthesisError> {
         let mut scratch_space: InstanceProofScratchSpace<F, T, I, PerRegisterARP> = InstanceProofScratchSpace::new();
 
@@ -291,7 +292,14 @@ impl<F: PrimeField, T: Transcript<F>, I: IOP<F>, P: FriProofPrototype<F, I>, FRI
         // println!("Final root for h1 in verifier = {:?}", proof.h2_iop_roots.last().expect("there is one").as_ref());
 
         scratch_space.transcript.commit_bytes(proof.h1_iop_roots.last().expect("there is one").as_ref());
+        for el in proof.fri_proof_h1.get_final_coefficients().iter() {
+            scratch_space.transcript.commit_field_element(&el);
+        }
+
         scratch_space.transcript.commit_bytes(proof.h2_iop_roots.last().expect("there is one").as_ref());
+        for el in proof.fri_proof_h2.get_final_coefficients().iter() {
+            scratch_space.transcript.commit_field_element(&el);
+        }
 
         let f_lde_size = self.column_domain.size * (self.lde_factor as u64);
         let g_lde_size = self.constraints_domain.size * (self.lde_factor as u64);
@@ -471,7 +479,7 @@ impl<F: PrimeField, T: Transcript<F>, I: IOP<F>, P: FriProofPrototype<F, I>, FRI
     fn calculate_g_at_z_from_f_at_z (
         &self,
         scratch_space: &InstanceProofScratchSpace<F, T, I, PerRegisterARP>,
-        proof: &InstanceProof<F, T, I, P, FRI, PerRegisterARP>,
+        proof: &InstanceProof<F, T, I, P, PR, FRI, PerRegisterARP>,
         z: F
     ) -> Result<F, SynthesisError> {
         let mut g_at_z = F::zero();
