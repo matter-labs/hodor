@@ -14,6 +14,18 @@ use crate::fri::*;
 use crate::SynthesisError;
 use crate::verifier::*;
 
+
+/*
+
+This module contains a stand-alone prover that is basically a composition from all other modules. Workflow is simple: new prover is constructed from the instance of the "problem"
+and does all the precomputations for ARP and ALI step, e.g. divisor precomputation for ALI. It takes additional parameters
+such as a desired LDE factor (1/rho paramter for FRI) and at what step FRI should output the final polynomial in a form
+of plain coefficients
+
+Test containts a use example
+
+*/
+
 pub struct Prover<F: PrimeField, T: Transcript<F>, I: IOP<F>, P: FriProofPrototype<F, I>, PR: FriProof<F, I>, FRI: FriIop<F, IopType = I, ProofPrototype = P, Proof = PR>, A: ARPType> {
     arp: ARPInstance::<F, A>,
     ali: ALIInstance::<F, A>,

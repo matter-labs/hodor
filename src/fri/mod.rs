@@ -9,6 +9,20 @@ pub mod fri_on_values;
 pub mod verifier;
 pub mod query_producer;
 
+/*
+
+This module contains a FRI implementation. Set of traits is generic enough to have FRI with `nu` (degree folding) 
+parameter higher than 1, but as a solid implementation only the version with `nu = 1` is provided with Blake2s hash
+function for instantiation of the Merkle trees
+
+
+To reduce the size of the FRI proof (that is a large contribution to the communication complexity)
+there exist quite a few optimizations like placing coset values to the adjustent leafs or skipping few intermediate
+trees (oracles), but those are yet to be implemented. There is no (public) solid analysis of the FRI for a case of 
+skipping intermediate roots
+
+*/
+
 pub trait FriProofPrototype<F: PrimeField, I: IOP<F>> {
     fn get_roots(&self) -> Vec< < <I::Tree as IopTree<F> >::Hasher as IopTreeHasher<F>>::HashOutput>;
     fn get_final_root(&self) -> < <I::Tree as IopTree<F> >::Hasher as IopTreeHasher<F>>::HashOutput;

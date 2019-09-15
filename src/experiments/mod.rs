@@ -2,6 +2,15 @@ pub(crate) mod vdf;
 pub(crate) mod cubic_vdf;
 mod square_root_calculator;
 
+/*
+
+This module contains a set of experiments like proving of a proper evaluation of VDF that itself is a square/cube root calculation.
+Such case is ideal for Stark as it contains only trivial low-degree constraints that are dense and a very small number of registers
+
+Interested user can find an example how to define the constraints using the convenience function in the `vdf.rs` or `cubic_vdf.rs` files
+
+*/
+
 mod tensor_lde;
 
 use ff::*;

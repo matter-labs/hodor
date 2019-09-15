@@ -10,6 +10,20 @@ mod per_register;
 mod density_query;
 pub(crate) mod mappings;
 
+/*
+
+This module contains an ARP step of the Stark. Values of the registers in the AIR are treated as evaluations of some
+witness polynomial at specific points. For effiency such points are chosen to be member of some multiplicative subgroup
+of the size 2^k, that allows to use FFT for polynomial multiplications and divisions.
+
+ARP only uses abstraction of the "register" and does not know about purposes of the individual registers, e.g. constant or 
+program counter register
+
+Only variant of ARP where each register is treated separately is implemented. Thus a set of witness polynomials 
+equal to the number of registers is used by the prover and verifier and on the later steps of the protocol
+
+*/
+
 pub trait IntoARP<F: PrimeField> {
     // return full trace, trace constraints and boundary constraints
     // registers should be remapped to have uniform structure, so ARP knows nothing about

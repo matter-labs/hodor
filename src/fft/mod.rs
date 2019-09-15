@@ -2,6 +2,14 @@ pub(crate) mod multicore;
 pub(crate) mod fft;
 pub(crate) mod lde;
 
+
+/*
+
+This module contains a set of functions to implement FFT and LDE operations in the efficient manner. Users of the "nightly"
+compiler can try to utilize the "prefetch" LLVM intrinsic to speedup operations by prefetching operands of number crunching.
+
+*/
+
 // pub(crate) mod recursive_fft;
 // pub(crate) mod recursive_lde;
 
