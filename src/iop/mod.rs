@@ -3,6 +3,18 @@ use ff::PrimeField;
 pub mod trivial_coset_combiner;
 pub mod blake2s_trivial_iop;
 
+/*
+
+This module contains an IOP abstraction that is implied to be instantiated by the Merkle tree, but 
+in principle any secure vector accumulator may be used for the same purpose
+
+At the moment some trait constraints are over-restrictive and imply use of the hash functions that 
+are PRF and return a byte array as a digest. In principle for an instantiation of the IOP as a Merkle tree just
+collision resistant hash function is enough for interactive case and a single invocation of PRF is enough for Fiat-Shamir
+heuristics (taking a Merkle tree root as a challenge for some other function)
+
+*/
+
 pub trait CosetInformation: Sized + Clone + Copy {
     const COSET_SIZE: usize;
 }

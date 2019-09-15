@@ -3,7 +3,12 @@ use blake2s_simd;
 use crypto::sha2::Sha256;
 use crypto::digest::Digest;
 
-pub mod merkle_tree;
+/*
+
+This module contains a set of helper functions that will be cleaned up later. 
+
+*/
+
 pub mod poly;
 
 pub trait Hasher: Sized + Clone {

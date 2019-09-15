@@ -1,6 +1,12 @@
 use blake2s_simd::{Params, State};
 use ff::{PrimeField, PrimeFieldRepr};
 
+/*
+
+This module contains a transcript trait and an implementation of the transcript based on Blake2s hasher. 
+
+*/
+
 lazy_static! {
     static ref TRANSCRIPT_BLAKE2S_PARAMS: State = {
         Params::new()

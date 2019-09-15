@@ -1,5 +1,19 @@
 use super::*;
 
+/*
+
+This is an attemt to create an abstraction for AIR. Trace system tries to call the witness generation
+function at the very time step to generate the witness value. Unfortunately this does not allow to have the following benefits
+
+- To have multicore witness generation for independent registers
+- To have cases where it's much better to generate witness "backward in time"
+
+
+For these reasons such abstraction was considered not too useful and gadget library is much better if
+proper gadget composition model is found
+
+*/
+
 pub struct TestTraceSystem<F: PrimeField> {
     pub pc_registers: Vec<String>,
     pub registers: Vec<String>,
