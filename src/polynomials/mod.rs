@@ -681,7 +681,7 @@ impl<F: PrimeField> Polynomial<F, Coefficients> {
 
         worker.scope(self.coeffs.len(), |scope, chunk| {
             for (i, (a, s)) in self.coeffs.chunks(chunk)
-                        .zip(subvalues.chunks_mut(chunk))
+                        .zip(subvalues.chunks_mut(1))
                         .enumerate() {
                 scope.spawn(move |_| {
                     let mut x = g.pow([(i*chunk) as u64]);
