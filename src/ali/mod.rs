@@ -11,6 +11,22 @@ use indexmap::IndexSet;
 
 pub mod per_register;
 
+/*
+
+This module contains an ALI step of the Stark. Constraints are applied to the masked witness polynomials(!), where masking
+allows to link values of the register that appear at the different time steps of the trace in AIR. If witness polynomials are
+constructed from the satisfying witness for AIR then polynomials that are results of the constraint applicaitons will zero on
+some subset of the multiplicative subgroup that we use for ARP. Thus a division operation on the corresponding vanishing polynomial
+(that corresponds to the constraint density in our terms) will result in a polynomial of some degree and not a rational function
+
+Such "satisfiability by divisibility" step is common in many proof systems and allows to later use FRI to check that all the 
+inputs and outputs to the ALI are indeed polynomials of some degree that verifier expects
+
+
+DEEP-ALI variant is implemented due to great reduction of the communication complexity
+
+*/
+
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub(crate) struct MaskProperties<F: PrimeField> {
     pub register: Register,

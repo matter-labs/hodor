@@ -4,6 +4,13 @@ use crate::SynthesisError;
 use crate::fft::multicore::*;
 use crate::fft::*;
 
+/*
+
+This module contains an abstraction over "polynomials" that are from time to time are either kept in a value or coefficient
+form at the various stages of the protocol, and to prevent errors such forms are stated at the type level!
+
+*/
+
 pub trait PolynomialForm: Sized + Copy + Clone {}
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]

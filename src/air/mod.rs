@@ -8,6 +8,12 @@ use ff::{
     PrimeField,
 };
 
+/*
+
+This module contains a set of abstractions to describe registers, constraints and their density
+
+*/
+
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum Register {
     ProgramCounter(usize),
@@ -16,12 +22,18 @@ pub enum Register {
     Aux(usize)
 }
 
+// TODO: add "end at"
+
+// happens at every row including start_at
+// Span is an auxilary information that will not allow to "wrap around" the trace
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct DenseConstraint {
     pub start_at: usize,
     pub span: usize
 }
 
+// happens start_at, start_at + interval, start_at + 2*interval, etc
+// Span is an auxilary information that will not allow to "wrap around" the trace
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct RepeatedConstraint {
     pub start_at: usize,
@@ -29,6 +41,9 @@ pub struct RepeatedConstraint {
     pub interval: usize
 }
 
+// TODO: may be add span
+
+// happens at the fixed set of rows
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct SparseConstraint {
     pub rows: Vec<usize>

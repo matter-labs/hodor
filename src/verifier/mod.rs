@@ -16,6 +16,17 @@ use indexmap::IndexSet as IndexSet;
 use indexmap::IndexMap as IndexMap;
 // use std::collections::{IndexSet, IndexMap};
 
+/*
+
+This module contains a stand-alone verifier. Verifier is composed from the instance definition and makes some precomputations
+when initialized and all further verification calls are ammortized. Please mind that Stark verifier knows all the constraints,
+so it requires linear memory to keep the constraints definition and linear time for evaluation of numerators for ALI step,
+and at least logarithmic time to evaluation denominators in case of trivial "dense" constraints
+
+Test in prover module containts a use example.
+
+*/
+
 // ---------------------
 fn evaluate_constraint_on_f_at_z_m<F: PrimeField>(
     constraint: &Constraint<F>,
@@ -83,7 +94,7 @@ fn evaluate_univariate_term_on_f_at_z_m<F: PrimeField>(
 }
 // ---------------------
 
-pub struct InstanceProof<F: PrimeField, T: Transcript<F>, I: IOP<F>, P: FriProofPrototype<F, I>, FRI: FriIop<F, IopType = I, ProofPrototype = P>, A: ARPType> {
+pub struct InstanceProof<F: PrimeField, T: Transcript<F>, I: IOP<F>, P: FriProofPrototype<F, I>, PR: FriProof<F, I>, FRI: FriIop<F, IopType = I, ProofPrototype = P, Proof = PR>, A: ARPType> {
     pub f_at_z_m: Vec<F>, 
     pub f_iop_roots: Vec< < <I::Tree as IopTree<F> >::Hasher as IopTreeHasher<F>>::HashOutput >,
     pub g_iop_root: < <I::Tree as IopTree<F> >::Hasher as IopTreeHasher<F>>::HashOutput,
@@ -94,13 +105,14 @@ pub struct InstanceProof<F: PrimeField, T: Transcript<F>, I: IOP<F>, P: FriProof
     pub h1_iop_roots: Vec< < <I::Tree as IopTree<F> >::Hasher as IopTreeHasher<F>>::HashOutput >,
     pub h2_iop_roots: Vec< < <I::Tree as IopTree<F> >::Hasher as IopTreeHasher<F>>::HashOutput >,
 
-    pub fri_proof_h1: FRI::Proof,
-    pub fri_proof_h2: FRI::Proof,
+    pub fri_proof_h1: PR,
+    pub fri_proof_h2: PR,
 
 
     pub _marker_a: std::marker::PhantomData<A>,
     pub _marker_t: std::marker::PhantomData<T>,
     pub _marker_p: std::marker::PhantomData<P>,
+    pub _marker_fri: std::marker::PhantomData<FRI>,
 }
 
 struct InstanceProofScratchSpace<F: PrimeField, T: Transcript<F>, I: IOP<F>, A: ARPType> {
@@ -127,7 +139,7 @@ impl<F: PrimeField, T: Transcript<F>, I: IOP<F>, A: ARPType> InstanceProofScratc
     }
 }
 
-pub struct Verifier<F: PrimeField, T: Transcript<F>, I: IOP<F>, P: FriProofPrototype<F, I>, FRI: FriIop<F, IopType = I, ProofPrototype = P>, A: ARPType> {
+pub struct Verifier<F: PrimeField, T: Transcript<F>, I: IOP<F>, P: FriProofPrototype<F, I>, PR: FriProof<F, I>, FRI: FriIop<F, IopType = I, ProofPrototype = P, Proof = PR>, A: ARPType> {
     instance: InstanceProperties<F>,
     max_constraint_power: u64,
     column_domain: Domain::<F>,
@@ -144,11 +156,11 @@ pub struct Verifier<F: PrimeField, T: Transcript<F>, I: IOP<F>, P: FriProofProto
     _marker_fri: std::marker::PhantomData<FRI>,
 }
 
-impl<F: PrimeField, T: Transcript<F>, I: IOP<F>, P: FriProofPrototype<F, I>, FRI: FriIop<F, IopType = I, ProofPrototype = P>> Verifier<F, T, I, P, FRI, PerRegisterARP> {
+impl<F: PrimeField, T: Transcript<F>, I: IOP<F>, P: FriProofPrototype<F, I>, PR: FriProof<F, I>, FRI: FriIop<F, IopType = I, ProofPrototype = P, Proof = PR>> Verifier<F, T, I, P, PR, FRI, PerRegisterARP> {
     pub fn new(
         instance: InstanceProperties<F>, 
         lde_factor: usize,
-        ) -> Result<Self, SynthesisError> {
+    ) -> Result<Self, SynthesisError> {
 
         let num_rows = instance.num_rows as u64;
         let num_rows_sup = num_rows.next_power_of_two();
@@ -252,7 +264,7 @@ impl<F: PrimeField, T: Transcript<F>, I: IOP<F>, P: FriProofPrototype<F, I>, FRI
 
     pub fn verify(
         &self,
-        proof: &InstanceProof<F, T, I, P, FRI, PerRegisterARP>
+        proof: &InstanceProof<F, T, I, P, PR, FRI, PerRegisterARP>
     ) -> Result<bool, SynthesisError> {
         let mut scratch_space: InstanceProofScratchSpace<F, T, I, PerRegisterARP> = InstanceProofScratchSpace::new();
 
@@ -291,7 +303,14 @@ impl<F: PrimeField, T: Transcript<F>, I: IOP<F>, P: FriProofPrototype<F, I>, FRI
         // println!("Final root for h1 in verifier = {:?}", proof.h2_iop_roots.last().expect("there is one").as_ref());
 
         scratch_space.transcript.commit_bytes(proof.h1_iop_roots.last().expect("there is one").as_ref());
+        for el in proof.fri_proof_h1.get_final_coefficients().iter() {
+            scratch_space.transcript.commit_field_element(&el);
+        }
+
         scratch_space.transcript.commit_bytes(proof.h2_iop_roots.last().expect("there is one").as_ref());
+        for el in proof.fri_proof_h2.get_final_coefficients().iter() {
+            scratch_space.transcript.commit_field_element(&el);
+        }
 
         let f_lde_size = self.column_domain.size * (self.lde_factor as u64);
         let g_lde_size = self.constraints_domain.size * (self.lde_factor as u64);
@@ -471,7 +490,7 @@ impl<F: PrimeField, T: Transcript<F>, I: IOP<F>, P: FriProofPrototype<F, I>, FRI
     fn calculate_g_at_z_from_f_at_z (
         &self,
         scratch_space: &InstanceProofScratchSpace<F, T, I, PerRegisterARP>,
-        proof: &InstanceProof<F, T, I, P, FRI, PerRegisterARP>,
+        proof: &InstanceProof<F, T, I, P, PR, FRI, PerRegisterARP>,
         z: F
     ) -> Result<F, SynthesisError> {
         let mut g_at_z = F::zero();
@@ -656,191 +675,3 @@ fn inverse_divisor_for_dense_constraint<F: PrimeField> (
 
     Ok((inverse_divisor, divisor_degree))
 }
-
-// #[test]
-// fn test_fib_full_verifier() {
-//     use ff::Field;
-//     use crate::Fr;
-//     use crate::air::Fibonacci;
-//     use crate::air::TestTraceSystem;
-//     use crate::air::IntoAIR;
-//     use crate::fft::multicore::Worker;
-//     use crate::transcript::Transcript;
-//     use crate::arp::*;
-//     use crate::ali::*;
-//     use crate::iop::blake2s_trivial_iop::TrivialBlake2sIOP;
-//     use crate::iop::blake2s_trivial_iop::Blake2sIopTree;
-//     use crate::fri::*;
-//     use crate::transcript::*;
-//     use crate::ali::per_register::*;
-
-//     let fib = Fibonacci::<Fr> {
-//         final_b: Some(5),
-//         at_step: Some(3),
-//         _marker: std::marker::PhantomData
-//     };
-
-//     let lde_factor = 16;
-//     // let lde_factor = 4;
-//     let mut transcript = Blake2sTranscript::new();
-
-//     let worker = Worker::new();
-
-//     let mut test_tracer = TestTraceSystem::<Fr>::new();
-//     fib.trace(&mut test_tracer).expect("should work");
-//     test_tracer.calculate_witness(1, 1, 3);
-//     let (witness, props) = test_tracer.into_arp();
-//     let witness = witness.expect("some witness");
-//     // println!("Witness = {:?}", witness);
-
-//     let is_satisfied = ARPInstance::<Fr, PerRegisterARP>::is_satisfied(&props, &witness, &worker);
-//     assert!(is_satisfied.is_ok());
-
-//     let arp = ARPInstance::<Fr, PerRegisterARP>::from_instance(props.clone(), &worker).expect("must work");
-
-//     let witness_polys = arp.calculate_witness_polys(witness, &worker).expect("must work");
-
-//     let f_ldes: Vec<_> = witness_polys.iter().map(|w| {
-//         w.clone().lde(&worker, lde_factor).expect("must work")
-//     }).collect();
-
-//     let f_oracles: Vec<_> = f_ldes.iter().map(|l|
-//         TrivialBlake2sIOP::<Fr>::create(l.as_ref())
-//     ).collect(); 
-
-//     let mut f_iop_roots = vec![];
-//     for o in f_oracles.iter() {
-//         let root = o.get_root();
-//         transcript.commit_bytes(&root);
-//         f_iop_roots.push(root);
-//     }
-
-//     let ali = ALIInstance::from_arp(arp, &worker).expect("is some");
-
-//     let g_poly_interpolant = ali.calculate_g(&mut transcript, witness_polys.clone(), &worker).expect("is some");
-
-//     let g_lde = g_poly_interpolant.clone().lde(&worker, lde_factor).expect("is something");
-
-//     let g_oracle = TrivialBlake2sIOP::create(g_lde.as_ref());
-//     let g_iop_root = g_oracle.get_root();
-//     transcript.commit_bytes(&g_iop_root);
-
-//     println!("Calculating DEEP part");
-
-//     let (h1_lde, h2_lde, f_at_z_m, _g_at_z) = ali.calculate_deep(
-//         &witness_polys,
-//         &f_ldes,
-//         &g_poly_interpolant,
-//         &g_lde,
-//         &mut transcript,
-//         &worker
-//     ).expect("must work");
-
-//     println!("G(z) from prover = {}", _g_at_z);
-
-//     let fri_final_poly_degree = 1;
-
-//     println!("Calculating FRI part");
-
-//     let h1_fri_proof_proto = NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>::proof_from_lde(&h1_lde, lde_factor, fri_final_poly_degree, &worker).expect("must work");
-//     let h2_fri_proof_proto = NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>::proof_from_lde(&h2_lde, lde_factor, fri_final_poly_degree, &worker).expect("must work");
-
-//     let mut h1_iop_roots = vec![h1_fri_proof_proto.l0_commitment.get_root()];
-
-//     for c in h1_fri_proof_proto.intermediate_commitments.iter() {
-//         h1_iop_roots.push(c.get_root().clone());
-//     }
-
-//     let mut h2_iop_roots = vec![h2_fri_proof_proto.l0_commitment.get_root()];
-
-//     for c in h2_fri_proof_proto.intermediate_commitments.iter() {
-//         h2_iop_roots.push(c.get_root().clone());
-//     }
-
-//     // println!("Final root for h1 = {:?}", h1_fri_proof_proto.final_root);
-//     // println!("Final root for h1 = {:?}", h2_fri_proof_proto.final_root);
-
-//     transcript.commit_bytes(&h1_fri_proof_proto.final_root);
-//     transcript.commit_bytes(&h2_fri_proof_proto.final_root);
-
-//     println!("Getting challenge indexes");
-
-//     let x_challenge_index_h1 = Verifier::<Fr, Blake2sTranscript<Fr>, TrivialBlake2sIOP<Fr>, NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>, PerRegisterARP>::bytes_to_challenge_index(
-//         &transcript.get_challenge_bytes(), 
-//         h1_lde.size(),
-//         lde_factor
-//     );
-
-//     let x_challenge_index_h2 = Verifier::<Fr, Blake2sTranscript<Fr>, TrivialBlake2sIOP<Fr>, NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>, PerRegisterARP>::bytes_to_challenge_index(
-//         &transcript.get_challenge_bytes(), 
-//         h2_lde.size(),
-//         lde_factor
-//     );
-
-//     {
-//         let valid = NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>::verify_prototype(
-//             &h1_fri_proof_proto,
-//             &h1_lde,
-//             x_challenge_index_h1
-//         ).expect("must work");
-
-//         assert!(valid);
-//     }
-
-//     {
-//         let valid = NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>::verify_prototype(
-//             &h2_fri_proof_proto,
-//             &h2_lde,
-//             x_challenge_index_h2
-//         ).expect("must work");
-
-//         assert!(valid);
-//     }
-
-//     let h1_fri_proof = NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>::prototype_into_proof(h1_fri_proof_proto, &h1_lde, x_challenge_index_h1).expect("must work");
-//     let h2_fri_proof = NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>::prototype_into_proof(h2_fri_proof_proto, &h2_lde, x_challenge_index_h2).expect("must work");
-
-
-//     let valid = NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>::verify_proof(&h1_fri_proof, x_challenge_index_h1, h1_lde.as_ref()[x_challenge_index_h1]).expect("must work");
-//     assert!(valid);
-
-//     // All prover work is complete here 
-
-//     println!("Expected H1 = {}", h1_lde.as_ref()[x_challenge_index_h1]);
-//     println!("Expected H2 = {}", h2_lde.as_ref()[x_challenge_index_h2]);
-
-//     let mut f_queries = vec![];
-//     for (o, lde) in f_oracles.iter().zip(f_ldes.iter()) {
-//         f_queries.push(o.query(x_challenge_index_h1, lde.as_ref()));
-//     }
-
-//     let g_query = g_oracle.query(x_challenge_index_h2, g_lde.as_ref());
-
-//     let proof = InstanceProof::<Fr, Blake2sTranscript<Fr>, TrivialBlake2sIOP<Fr>, NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>, PerRegisterARP>{
-//         f_at_z_m: f_at_z_m, 
-//         f_iop_roots: f_iop_roots,
-//         g_iop_root: g_iop_root,
-
-//         f_queries: f_queries,
-//         g_query: g_query,
-
-//         h1_iop_roots: h1_iop_roots,
-//         h2_iop_roots: h2_iop_roots,
-
-//         fri_proof_h1: h1_fri_proof,
-//         fri_proof_h2: h2_fri_proof,
-
-//         _marker_a: std::marker::PhantomData,
-//         _marker_t: std::marker::PhantomData,
-//     };
-
-//     let verifier = Verifier::<Fr, Blake2sTranscript<Fr>, TrivialBlake2sIOP<Fr>, NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>, PerRegisterARP>::new(
-//         props, 
-//         lde_factor
-//     ).expect("some verifier");
-
-//     println!("Verifier starts");
-//     let valid = verifier.verify(&proof).expect("must work");
-
-//     assert!(valid);
-// }

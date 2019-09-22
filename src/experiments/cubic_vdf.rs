@@ -382,7 +382,7 @@ fn test_cubic_vdf_high_level_prover() {
 
 
     let start = Instant::now();
-    let prover = Prover::<Fr, Blake2sTranscript<Fr>, TrivialBlake2sIOP<Fr>, FRIProofPrototype<Fr, TrivialBlake2sIOP<Fr>>, NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>, PerRegisterARP>::new(
+    let prover = Prover::<Fr, Blake2sTranscript<Fr>, TrivialBlake2sIOP<Fr>, FRIProofPrototype<Fr, TrivialBlake2sIOP<Fr>>, FRIProof<Fr, TrivialBlake2sIOP<Fr>>, NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>, PerRegisterARP>::new(
         props.clone(), 
         lde_factor,
         output_at_degree_plus_one
@@ -394,7 +394,7 @@ fn test_cubic_vdf_high_level_prover() {
     println!("Prove generation in {} ms", start.elapsed().as_millis());
 
     let start = Instant::now();
-    let verifier = Verifier::<Fr, Blake2sTranscript<Fr>, TrivialBlake2sIOP<Fr>, FRIProofPrototype<Fr, TrivialBlake2sIOP<Fr>>, NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>, PerRegisterARP>::new(
+    let verifier = Verifier::<Fr, Blake2sTranscript<Fr>, TrivialBlake2sIOP<Fr>, FRIProofPrototype<Fr, TrivialBlake2sIOP<Fr>>, FRIProof<Fr, TrivialBlake2sIOP<Fr>>, NaiveFriIop::<Fr, TrivialBlake2sIOP<Fr>>, PerRegisterARP>::new(
         props, 
         lde_factor
     ).expect("some verifier");

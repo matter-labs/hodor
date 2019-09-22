@@ -1,6 +1,15 @@
 use ff::PrimeField;
 use crate::SynthesisError;
 
+/*
+
+This module contains a domain abstraction that is in our case just multiplicative subgroup of the size 2^k
+
+It would worth to refactor such module to have some form of precomputation, but right now it's not possible to declare
+generic statics or constant functions in Rust that would allow good implementation of such functionality.
+
+*/
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Domain<F: PrimeField> {
     pub size: u64,
