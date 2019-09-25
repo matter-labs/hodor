@@ -171,7 +171,7 @@ impl<F: PrimeField> Polynomial<F, Coefficients> {
         let coeffs_len = roots.len() + 1;
 
         let domain = Domain::<F>::new_for_size(coeffs_len as u64)?;
-        let num_threads = worker.cpus;
+        let num_threads = worker.get_num_spawned_threads(roots.len());
 
         // vector of vectors of polynomial coefficients for subproducts
         let mut subterms = vec![vec![]; num_threads];
@@ -683,7 +683,7 @@ impl<F: PrimeField> Polynomial<F, Coefficients> {
     }
 
     pub fn evaluate_at(&self, worker: &Worker, g: F) -> F {
-        let num_threads = worker.cpus;
+        let num_threads = worker.get_num_spawned_threads(self.coeffs.len());
         let mut subvalues = vec![F::zero(); num_threads as usize];
 
         worker.scope(self.coeffs.len(), |scope, chunk| {
