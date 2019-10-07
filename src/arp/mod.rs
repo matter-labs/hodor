@@ -7,7 +7,6 @@ use crate::*;
 use ff::PrimeField;
 // mod single_witness;
 mod per_register;
-mod density_query;
 pub(crate) mod mappings;
 
 /*
@@ -46,16 +45,16 @@ pub enum PerRegisterARP { }
 impl ARPType for SingleWitnessARP {}
 impl ARPType for PerRegisterARP {}
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct ARPInstance<F: PrimeField, T: ARPType> {
     pub properties: InstanceProperties<F>,
     _marker: std::marker::PhantomData<T>
 }
 
-pub trait ARP<F :PrimeField>: 
+pub trait ARP<F:PrimeField>: 
     Sized 
     + Clone 
-    + std::fmt::Debug 
+    // + std::fmt::Debug 
 {
     fn from_instance(
         instance: InstanceProperties<F>, 
@@ -75,7 +74,7 @@ pub trait ARP<F :PrimeField>:
     ) -> Result<(), SynthesisError>;
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct InstanceProperties<F: PrimeField> {
     pub num_rows: usize,
     pub num_registers: usize,

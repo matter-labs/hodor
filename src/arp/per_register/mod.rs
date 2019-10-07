@@ -6,7 +6,7 @@ use crate::SynthesisError;
 use crate::polynomials::*;
 use crate::fft::multicore::Worker;
 use crate::fft::*;
-use super::density_query::*;
+use crate::air::constraint_density::*;
 
 use super::mappings::*;
 
@@ -215,18 +215,21 @@ impl<F: PrimeField> ARPInstance<F, PerRegisterARP> {
 
         let num_rows = witness[0].len();
 
+        use crate::air::constraint_density::ConstraintDensity;
+
         // these constraints are not remapped, so step differences are 
         for c in properties.constraints.iter() {
-            let density: Box<dyn DensityQuery> = match c.density {
-                ConstraintDensity::Dense(ref dense) => {
-                    let dense_query = DenseConstraintQuery::new(&dense, num_rows);
+            let density = c.density.calculate_density_query(num_rows);
+            // let density: Box<dyn DensityQuery> = match c.density {
+            //     ConstraintDensity::Dense(ref dense) => {
+            //         let dense_query = DenseConstraintQuery::new(&dense, num_rows);
 
-                    Box::from(dense_query)
-                },
-                _ => {
-                    unimplemented!();
-                }
-            };
+            //         Box::from(dense_query)
+            //     },
+            //     _ => {
+            //         unimplemented!();
+            //     }
+            // };
 
             for row in density {
                 let value = evaluate_constraint_on_witness(

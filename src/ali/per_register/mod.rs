@@ -25,9 +25,9 @@ pub struct ALIInstance<F: PrimeField, T: ARPType> {
     pub constraints_domain: Domain::<F>,
     pub(crate) all_masks: IndexSet::<MaskProperties<F>>,
     pub all_boundary_constrained_registers: IndexSet::<Register>,
-    pub constraint_divisors: IndexMap::<ConstraintDensity, Polynomial<F, Values>>,
+    pub constraint_divisors: IndexMap::<Box<dyn ConstraintDensity<F>>, Polynomial<F, Values>>,
     pub boundary_constraint_divisors: IndexMap::<u64, Polynomial<F, Values>>,
-    pub constraints_batched_by_density: IndexMap::< ConstraintDensity, Vec<Constraint<F>> >,
+    pub constraints_batched_by_density: IndexMap::<Box<dyn ConstraintDensity<F>>, Vec<Constraint<F>> >,
     pub precomputations: PrecomputedOmegas<F>,
     _marker: std::marker::PhantomData<T>
 }
@@ -161,7 +161,7 @@ impl<F: PrimeField> ALIInstance<F, PerRegisterARP> {
             Ok((inverse_divisors, divisor_degree))
         }
 
-        let mut constraints_batched_by_density: IndexMap::< ConstraintDensity, Vec<Constraint<F>> > = IndexMap::new();
+        let mut constraints_batched_by_density: IndexMap::<Box<dyn ConstraintDensity<F>>, Vec<Constraint<F>> > = IndexMap::new();
 
         for constraint in arp.properties.constraints.iter() {
             if let Some(batch) = constraints_batched_by_density.get_mut(&constraint.density) {
@@ -171,24 +171,19 @@ impl<F: PrimeField> ALIInstance<F, PerRegisterARP> {
             }
         }
 
-        let mut inverse_divisors_per_constraint_density: IndexMap::<ConstraintDensity, Polynomial<F, Values>> = IndexMap::new();
+        let mut inverse_divisors_per_constraint_density: IndexMap::<Box<dyn ConstraintDensity<F>>, Polynomial<F, Values>> = IndexMap::new();
 
         for (density, _) in constraints_batched_by_density.iter() {
-            match density {
-                ConstraintDensity::Dense(t) => {
-                    let (divisors, _) = inverse_divisor_for_dense_constraint_in_coset(
-                        &column_domain, 
-                        &constraints_domain, 
-                        t.clone(), 
-                        num_rows as u64, 
-                        &worker)?;
+            let (inverse_divisors, _) = density.inverse_divisor_in_coset(          
+                &column_domain, 
+                &constraints_domain, 
+                &None,
+                &None,
+                num_rows,
+                &worker
+            )?;
 
-                    inverse_divisors_per_constraint_density.insert(density.clone(), divisors);
-                },
-                _ => {
-                    unimplemented!();
-                }
-            }
+            inverse_divisors_per_constraint_density.insert(density.clone(), inverse_divisors);
         }
 
         let mut all_boundary_constrained_registers: IndexSet::<Register> = IndexSet::new();

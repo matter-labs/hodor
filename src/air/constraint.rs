@@ -4,6 +4,8 @@ use ff::{
 
 use super::*;
 
+use super::constraint_density::*;
+
 use std::ops::{AddAssign, SubAssign, MulAssign};
 use std::default::Default;
 
@@ -14,13 +16,18 @@ pub struct BoundaryConstraint<F: PrimeField> {
     pub value: Option<F>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Constraint<F: PrimeField> {
     pub constant_term: F,
     pub terms: Vec<ConstraintTerm<F>>,
     pub degree: u64,
-    pub density: ConstraintDensity,
+    pub density: Box<dyn ConstraintDensity<F>>,
 }
+
+// #[derive(Clone, PartialEq, Eq, Hash, Debug)]
+// pub struct Density<F: PrimeField> {
+//     density: Box<dyn ConstraintDensity<F>>
+// }
 
 impl<F: PrimeField> std::fmt::Display for Constraint<F> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
@@ -258,7 +265,7 @@ impl<F: PrimeField> Default for Constraint<F> {
             constant_term: F::zero(),
             terms: vec![],
             degree: 0u64,
-            density: ConstraintDensity::Dense(DenseConstraint::default()),
+            density: Box::from(DenseConstraint::default()),
         }
     }
 }

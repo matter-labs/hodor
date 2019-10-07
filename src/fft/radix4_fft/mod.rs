@@ -6,7 +6,7 @@ pub(crate) fn best_fft<F: PrimeField>(a: &mut [F], worker: &Worker, omega: &F, l
 {
     assert!(log_n % 2 == 0); // TODO: For now
     let mut log_cpus = worker.log_num_cpus();
-    if (log_cpus % 2 != 0)
+    if log_cpus % 2 != 0
     {
         log_cpus -= 1;
     }
@@ -153,7 +153,7 @@ pub(crate) fn parallel_fft_radix_4<F: PrimeField>(
                 let mut elt = F::one();
                 for i in 0..(1 << log_new_n) {
                     for s in 0..num_cpus {
-                        let idx = (i + (s << log_new_n));
+                        let idx = i + (s << log_new_n);
                         let mut t = a[idx];
                         t.mul_assign(&elt);
                         tmp[i].add_assign(&t);

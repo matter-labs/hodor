@@ -254,7 +254,7 @@ impl Field for Fq2 {
         })
     }
 
-    fn frobenius_map(&mut self, power: usize) {
+    fn frobenius_map(&mut self, _power: usize) {
         unimplemented!();
         // self.c1.mul_assign(&FROBENIUS_COEFF_FQ2_C1[power % 2]);
     }

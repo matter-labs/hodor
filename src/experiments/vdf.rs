@@ -66,14 +66,14 @@ impl<F: PrimeField> IntoARP<F> for VDF<F> {
         two_c0_c1 *= c1_value_now;
 
         let mut constraint_0 = Constraint::default();
-        constraint_0.density = ConstraintDensity::default();
+        constraint_0.density = Box::from(DenseConstraint::default());
 
         constraint_0 -= c0_squared;
         constraint_0 -= c1_squared_by_r;
         constraint_0 += c0_value_next_step;
 
         let mut constraint_1 = Constraint::default();
-        constraint_1.density = ConstraintDensity::default();
+        constraint_1.density = Box::from(DenseConstraint::default());
 
         constraint_1 -= two_c0_c1;
         constraint_1 += c1_value_next_step;

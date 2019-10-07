@@ -4,6 +4,10 @@ mod constraint;
 pub use constraint::*;
 pub use test_trace_system::*;
 
+pub mod constraint_density;
+
+pub use constraint_density::*;
+
 use ff::{
     PrimeField,
 };
@@ -22,105 +26,105 @@ pub enum Register {
     Aux(usize)
 }
 
-// TODO: add "end at"
+// // TODO: add "end at"
 
-// happens at every row including start_at
-// Span is an auxilary information that will not allow to "wrap around" the trace
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub struct DenseConstraint {
-    pub start_at: usize,
-    pub span: usize
-}
+// // happens at every row including start_at
+// // Span is an auxilary information that will not allow to "wrap around" the trace
+// #[derive(Debug, Clone, Eq, PartialEq, Hash)]
+// pub struct DenseConstraint {
+//     pub start_at: usize,
+//     pub span: usize
+// }
 
-// happens start_at, start_at + interval, start_at + 2*interval, etc
-// Span is an auxilary information that will not allow to "wrap around" the trace
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub struct RepeatedConstraint {
-    pub start_at: usize,
-    pub span: usize,
-    pub interval: usize
-}
+// // happens start_at, start_at + interval, start_at + 2*interval, etc
+// // Span is an auxilary information that will not allow to "wrap around" the trace
+// #[derive(Debug, Clone, Eq, PartialEq, Hash)]
+// pub struct RepeatedConstraint {
+//     pub start_at: usize,
+//     pub span: usize,
+//     pub interval: usize
+// }
 
-// TODO: may be add span
+// // TODO: may be add span
 
-// happens at the fixed set of rows
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub struct SparseConstraint {
-    pub rows: Vec<usize>
-}
+// // happens at the fixed set of rows
+// #[derive(Debug, Clone, Eq, PartialEq, Hash)]
+// pub struct SparseConstraint {
+//     pub rows: Vec<usize>
+// }
 
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub enum ConstraintDensity {
-    Dense(DenseConstraint),
-    Repeated(RepeatedConstraint),
-    Sparse(SparseConstraint),
-}
+// #[derive(Debug, Clone, Eq, PartialEq, Hash)]
+// pub enum ConstraintDensity {
+//     Dense(DenseConstraint),
+//     Repeated(RepeatedConstraint),
+//     Sparse(SparseConstraint),
+// }
 
-impl std::default::Default for ConstraintDensity {
-    fn default() -> Self {
-        ConstraintDensity::Dense(DenseConstraint::default())
-    }
-}
+// impl std::default::Default for ConstraintDensity {
+//     fn default() -> Self {
+//         ConstraintDensity::Dense(DenseConstraint::default())
+//     }
+// }
 
-impl DenseConstraint {
-    pub fn new(starting_at: usize, span: usize) -> Self {
-        assert!(span >= 1, "Span >= 1");
+// impl DenseConstraint {
+//     pub fn new(starting_at: usize, span: usize) -> Self {
+//         assert!(span >= 1, "Span >= 1");
         
-        DenseConstraint{
-            start_at: starting_at,
-            span: span
-        }
-    }
-}
+//         DenseConstraint{
+//             start_at: starting_at,
+//             span: span
+//         }
+//     }
+// }
 
-impl std::default::Default for DenseConstraint {
-    fn default() -> Self {
-        DenseConstraint{
-            start_at: 0,
-            span: 1
-        }
-    }
-}
+// impl std::default::Default for DenseConstraint {
+//     fn default() -> Self {
+//         DenseConstraint{
+//             start_at: 0,
+//             span: 1
+//         }
+//     }
+// }
 
-impl RepeatedConstraint {
-    pub fn new(starting_at: usize, span: usize, interval: usize) -> Self {
-        assert!(interval != 1 && interval != 0 && span >= 1, "Repeated constraint with interval 1 should be DenseConstraint");
+// impl RepeatedConstraint {
+//     pub fn new(starting_at: usize, span: usize, interval: usize) -> Self {
+//         assert!(interval != 1 && interval != 0 && span >= 1, "Repeated constraint with interval 1 should be DenseConstraint");
         
-        RepeatedConstraint{
-            start_at: starting_at,
-            span: span,
-            interval: interval
-        }
-    }
-}
+//         RepeatedConstraint{
+//             start_at: starting_at,
+//             span: span,
+//             interval: interval
+//         }
+//     }
+// }
 
-impl std::default::Default for RepeatedConstraint {
-    fn default() -> Self {
-        RepeatedConstraint{
-            start_at: 0,
-            span: 1,
-            interval: 2
-        }
-    }
-}
+// impl std::default::Default for RepeatedConstraint {
+//     fn default() -> Self {
+//         RepeatedConstraint{
+//             start_at: 0,
+//             span: 1,
+//             interval: 2
+//         }
+//     }
+// }
 
-impl SparseConstraint{
-    pub fn new(at_rows: Vec<usize>) -> Self {
-        assert!(at_rows.len() > 0, "Interval constraint constraint must hold somewhere");
+// impl SparseConstraint{
+//     pub fn new(at_rows: Vec<usize>) -> Self {
+//         assert!(at_rows.len() > 0, "Interval constraint constraint must hold somewhere");
         
-        SparseConstraint{
-            rows: at_rows
-        }
-    }
-}
+//         SparseConstraint{
+//             rows: at_rows
+//         }
+//     }
+// }
 
-impl std::default::Default for SparseConstraint {
-    fn default() -> Self {
-        SparseConstraint{
-            rows: vec![]
-        }
-    }
-}
+// impl std::default::Default for SparseConstraint {
+//     fn default() -> Self {
+//         SparseConstraint{
+//             rows: vec![]
+//         }
+//     }
+// }
 
 #[derive(Debug)]
 pub enum TracingError {

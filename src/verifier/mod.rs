@@ -146,7 +146,7 @@ pub struct Verifier<F: PrimeField, T: Transcript<F>, I: IOP<F>, P: FriProofProto
     constraints_domain: Domain::<F>,
     all_masks: IndexSet::<MaskProperties<F>>,
     all_boundary_constrained_registers: IndexSet::<Register>,
-    constraints_batched_by_density: IndexMap::< ConstraintDensity, Vec<Constraint<F>> >,
+    constraints_batched_by_density: IndexMap::<Box<dyn ConstraintDensity<F>>, Vec<Constraint<F>> >,
     lde_factor: usize,
         
     _marker_a: std::marker::PhantomData<A>,
@@ -190,7 +190,7 @@ impl<F: PrimeField, T: Transcript<F>, I: IOP<F>, P: FriProofPrototype<F, I>, PR:
 
         let constraints_domain = Domain::<F>::new_for_size(constraint_power * num_rows_sup)?;
 
-        let mut constraints_batched_by_density: IndexMap::< ConstraintDensity, Vec<Constraint<F>> > = IndexMap::new();
+        let mut constraints_batched_by_density: IndexMap::<Box<dyn ConstraintDensity<F>>, Vec<Constraint<F>> > = IndexMap::new();
 
         for constraint in instance.constraints.iter() {
             if let Some(batch) = constraints_batched_by_density.get_mut(&constraint.density) {
@@ -525,20 +525,14 @@ impl<F: PrimeField, T: Transcript<F>, I: IOP<F>, P: FriProofPrototype<F, I>, PR:
         let mut constraint_challenges_iter = scratch_space.constraint_challenges.iter();
 
         for (density, batch) in self.constraints_batched_by_density.iter() {
-            let (inverse_divisor, _) = match density {
-                ConstraintDensity::Dense(dense) => {
-                    inverse_divisor_for_dense_constraint(
-                        z, 
-                        &self.column_domain, 
-                        &self.constraints_domain, 
-                        dense.clone(),
-                        self.instance.num_rows as u64
-                )? 
-                },
-                _ => {
-                    unimplemented!();
-                }
-            };
+            let inverse_divisor = density.evaluate_inversed_at(
+                z,
+                &self.column_domain, 
+                &self.constraints_domain, 
+                &None,
+                &None,
+                self.instance.num_rows,
+            )?;
             
             for c in batch.iter() {
                 let constraint_power = c.degree;
