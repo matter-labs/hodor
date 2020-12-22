@@ -140,6 +140,32 @@ fn subview_mut<T: Sized, const N: usize>(slice: &mut [T]) -> &mut [[T; N]] {
     array_slice
 }
 
+fn allocate_zeroable_array_without_stack<T: Sized, const N: usize>(size: usize) -> Vec<[T; N]> {
+    let allocate_bytes = N * std::mem::size_of::<T>() * size;
+    unsafe {
+        let t = vec![0u8; allocate_bytes];
+        assert_eq!(t.capacity() % std::mem::size_of::<T>() / N, 0);
+        assert_eq!(t.capacity() / std::mem::size_of::<T>() / N, size);
+        let mut t = std::mem::ManuallyDrop::new(t);
+        let t: Vec<[T; N]> = Vec::from_raw_parts(t.as_mut_ptr().cast(),size, size);
+
+        t
+    }
+}
+
+fn allocate_zeroable<T: Sized>(size: usize) -> Vec<T> {
+    let allocate_bytes = std::mem::size_of::<T>() * size;
+    unsafe {
+        let t = vec![0u8; allocate_bytes];
+        assert_eq!(t.capacity() % std::mem::size_of::<T>(), 0);
+        assert_eq!(t.capacity() / std::mem::size_of::<T>(), size);
+        let mut t = std::mem::ManuallyDrop::new(t);
+        let t: Vec<T> = Vec::from_raw_parts(t.as_mut_ptr().cast(),size, size);
+
+        t
+    }
+}
+
 
 // we expect that a sub-fft fits into the L2 or L3 cache line
 // #[cfg(feature = "const_generic_fft")]
@@ -162,16 +188,7 @@ pub(crate) fn parallel_cache_friendly_fft<F: PrimeField, const N: usize>(
 
     println!("Processing {} subworks on {} cores", num_subworks, worker.num_cpus());
 
-    // unsafe trick to avoid overflow
-    let allocate_bytes = N * std::mem::size_of::<F>() * num_subworks;
-    let mut tmp: Vec<[F; N]> = unsafe {
-        let t = vec![0u8; allocate_bytes];
-        let mut t: Vec<[F; N]> = std::mem::transmute(t);
-        t.set_len(num_subworks);
-        // capacity is garbage here, but we do not care as we do not reallocate it ever
-
-        t
-    };
+    let mut tmp = allocate_zeroable_array_without_stack::<F, N>(num_subworks);
 
     // let mut tmp = vec![[F::zero(); N]; num_subworks];
     let new_omega = omega.pow(&[num_subworks as u64]);
@@ -180,15 +197,7 @@ pub(crate) fn parallel_cache_friendly_fft<F: PrimeField, const N: usize>(
 
     let start = Instant::now();
 
-    // subshuffle for better memory locality of inner loops
-    let mut aa: Vec<F> = unsafe {
-        let t = vec![0u8; allocate_bytes];
-        let mut t: Vec<F> = std::mem::transmute(t);
-        t.set_len(a.len());
-        // capacity is garbage here, but we do not care as we do not reallocate it ever
-
-        t
-    };
+    let mut aa = allocate_zeroable::<F>(a.len());
     let l = log_new_n;
     let h = log_num_subworks;
 
