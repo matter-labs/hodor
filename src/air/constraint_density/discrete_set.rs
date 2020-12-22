@@ -1,7 +1,6 @@
 use super::*;
 use crate::ff::PrimeField;
-// Happens at the subdomain (e.g. every 4th row) of the column. May be displsced
-// to happen on e.g. 4k + 1
+// Happens at particular rows
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct DiscreteSetConstraint {
     pub rows: Vec<usize>

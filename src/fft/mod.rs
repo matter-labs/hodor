@@ -230,6 +230,150 @@ fn test_fft_prunning()
 }
 
 
+#[test]
+fn test_cache_friendly_fft() {
+    use crate::experiments::fields::vdf_128_ef::Fr;
+    use crate::domains::Domain;
+    use crate::fft::multicore::Worker;
+    use std::time::Instant;
+
+    use rand::{XorShiftRng, SeedableRng, Rand};
+    let rng = &mut XorShiftRng::from_seed([0x3dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
+
+    // this looks much faster for 2^20 case and slow for 2^24 case for now
+
+    const LOG_N: usize = 24;
+    const N: usize = 1 << LOG_N;
+
+    let mut input = (0..N).map(|_| Fr::rand(rng)).collect::<Vec<_>>();
+    
+    let mut reference = input.clone();
+
+    let worker = Worker::new();
+
+    let domain = Domain::<Fr>::new_for_size(N as u64).unwrap();
+    let omega = domain.generator;
+
+    let log_cpus = worker.log_num_cpus();
+
+    let start = Instant::now();
+    crate::fft::fft::parallel_fft(&mut reference[..], &worker, &omega, LOG_N as u32, log_cpus);
+    println!("best fft taken {:?}", start.elapsed());
+
+    // const ELEMS_FOR_CACHE_SIZE: usize = (1 << 21) / std::mem::size_of::<Fr>(); // L3 is 2MB per core
+    // // const ELEMS_FOR_CACHE_SIZE: usize = (1 << 16) / std::mem::size_of::<Fr>(); // L2 is 64kb per core
+    // // const ELEMS_FOR_CACHE_SIZE: usize = (1 << 19) / std::mem::size_of::<Fr>(); // ~ L3 and no stack overflow
+    // println!("Using subffts of size {}", ELEMS_FOR_CACHE_SIZE);
+
+    const CACHE_32MB: usize = (1 << 25) / std::mem::size_of::<Fr>(); // 16MB cache
+    const CACHE_16MB: usize = (1 << 24) / std::mem::size_of::<Fr>(); // 16MB cache
+    const CACHE_8MB: usize = (1 << 23) / std::mem::size_of::<Fr>(); // 8MB cache
+    const CACHE_4MB: usize = (1 << 22) / std::mem::size_of::<Fr>(); // 4MB cache
+    const CACHE_2MB: usize = (1 << 21) / std::mem::size_of::<Fr>(); // 2MB cache
+    const CACHE_1MB: usize = (1 << 20) / std::mem::size_of::<Fr>(); // 1MB cache
+
+    let start = Instant::now();
+    self::fft::parallel_cache_friendly_fft::<Fr, CACHE_32MB>(&mut input, &worker, &omega, LOG_N as u32);
+    println!("cache friendly fft taken {:?} for {} element cache", start.elapsed(), CACHE_32MB);
+
+    let start = Instant::now();
+    self::fft::parallel_cache_friendly_fft::<Fr, CACHE_16MB>(&mut input, &worker, &omega, LOG_N as u32);
+    println!("cache friendly fft taken {:?} for {} element cache", start.elapsed(), CACHE_16MB);
+
+    let start = Instant::now();
+    self::fft::parallel_cache_friendly_fft::<Fr, CACHE_8MB>(&mut input, &worker, &omega, LOG_N as u32);
+    println!("cache friendly fft taken {:?} for {} element cache", start.elapsed(), CACHE_8MB);
+
+    // let start = Instant::now();
+    // self::fft::parallel_cache_friendly_fft::<Fr, CACHE_4MB>(&mut input, &worker, &omega, LOG_N as u32);
+    // println!("cache friendly fft taken {:?} for {} element cache", start.elapsed(), CACHE_4MB);
+
+    // let start = Instant::now();
+    // self::fft::parallel_cache_friendly_fft::<Fr, CACHE_2MB>(&mut input, &worker, &omega, LOG_N as u32);
+    // println!("cache friendly fft taken {:?} for {} byte cache", start.elapsed(), CACHE_2MB);
+
+    // let start = Instant::now();
+    // self::fft::parallel_cache_friendly_fft::<Fr, CACHE_1MB>(&mut input, &worker, &omega, LOG_N as u32);
+    // println!("cache friendly fft taken {:?} for {} byte cache", start.elapsed(), CACHE_1MB);
+
+    // let start = Instant::now();
+    // self::fft::parallel_cache_friendly_fft_without_stack_spilling::<Fr, CACHE_16MB>(&mut input, &worker, &omega, LOG_N as u32);
+    // println!("cache friendly fft without stack abuse taken {:?} for {} element cache", start.elapsed(), CACHE_16MB);
+
+    // let start = Instant::now();
+    // self::fft::parallel_cache_friendly_fft_without_stack_spilling::<Fr, CACHE_8MB>(&mut input, &worker, &omega, LOG_N as u32);
+    // println!("cache friendly fft without stack abuse taken {:?} for {} element cache", start.elapsed(), CACHE_8MB);
+
+    // let start = Instant::now();
+    // self::fft::parallel_cache_friendly_fft_without_stack_spilling::<Fr, CACHE_4MB>(&mut input, &worker, &omega, LOG_N as u32);
+    // println!("cache friendly fft without stack abuse taken {:?} for {} element cache", start.elapsed(), CACHE_4MB);
+
+    // let start = Instant::now();
+    // self::fft::parallel_cache_friendly_fft_without_stack_spilling::<Fr, CACHE_2MB>(&mut input, &worker, &omega, LOG_N as u32);
+    // println!("cache friendly fft without stack abuse taken {:?} for {} byte cache", start.elapsed(), CACHE_2MB);
+
+    // let start = Instant::now();
+    // self::fft::parallel_cache_friendly_fft_without_stack_spilling::<Fr, CACHE_1MB>(&mut input, &worker, &omega, LOG_N as u32);
+    // println!("cache friendly fft without stack abuse taken {:?} for {} byte cache", start.elapsed(), CACHE_1MB);
+
+    let start = Instant::now();
+    const K0: usize = N / CACHE_16MB;
+    self::fft::parallel_partitioned_fft::<Fr, CACHE_16MB, K0>(&mut input, &worker, &omega, LOG_N as u32);
+    println!("hard partitioned fft taken {:?} for {} element cache", start.elapsed(), CACHE_16MB);
+
+    let start = Instant::now();
+    const K1: usize = N / CACHE_8MB;
+    self::fft::parallel_partitioned_fft::<Fr, CACHE_8MB, K1>(&mut input, &worker, &omega, LOG_N as u32);
+    println!("hard partitioned fft taken {:?} for {} element cache", start.elapsed(), CACHE_8MB);
+
+    // let start = Instant::now();
+    // const K2: usize = N / CACHE_4MB;
+    // self::fft::parallel_partitioned_fft::<Fr, CACHE_4MB, K2>(&mut input, &worker, &omega, LOG_N as u32);
+    // println!("hard partitioned fft taken {:?} for {} element cache", start.elapsed(), CACHE_4MB);
+
+}
+
+
+#[test]
+fn test_serial_stack_fft() {
+    use crate::experiments::fields::vdf_128_ef::Fr;
+    use crate::domains::Domain;
+    use crate::fft::multicore::Worker;
+    use std::time::Instant;
+
+    use rand::{XorShiftRng, SeedableRng, Rand};
+    let rng = &mut XorShiftRng::from_seed([0x3dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
+
+    const LOG_N: usize = 16;
+    const N: usize = 1 << LOG_N;
+
+    let input = (0..N).map(|_| Fr::rand(rng)).collect::<Vec<_>>();
+    
+    let mut reference = input.clone();
+
+    let domain = Domain::<Fr>::new_for_size(N as u64).unwrap();
+    let omega = domain.generator;
+
+    use std::thread;
+
+    let handle = thread::Builder::new().stack_size(1 << 22).name("FFT tester".to_string()).spawn(move || {
+        let start = Instant::now();
+        crate::fft::fft::serial_fft(&mut reference[..], &omega, LOG_N as u32);
+        println!("serial fft taken {:?}", start.elapsed());
+    
+        use std::convert::TryInto;
+        let mut input_array: [Fr; N] = input.try_into().unwrap();
+    
+        let start = Instant::now();
+        self::fft::serial_cache_friendly_fft::<Fr, N>(&mut input_array, &omega);
+        println!("stack friendly fft taken {:?}", start.elapsed());
+    }).unwrap();   
+
+    handle.join().unwrap();
+}
+
+
+
 // #[cfg(feature = "nightly")]
 // extern crate prefetch;
 

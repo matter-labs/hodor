@@ -321,3 +321,15 @@ impl<F:PrimeField> SubAssign<&F> for Constraint<F> {
         self.constant_term.sub_assign(rhs);
     }
 }
+
+impl<F:PrimeField> AddAssign<F> for Constraint<F> {
+    fn add_assign(&mut self, rhs: F) {
+        self.constant_term.add_assign(&rhs);
+    }
+}
+
+impl<F:PrimeField> SubAssign<F> for Constraint<F> {
+    fn sub_assign(&mut self, rhs: F) {
+        self.constant_term.sub_assign(&rhs);
+    }
+}

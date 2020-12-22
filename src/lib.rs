@@ -1,4 +1,6 @@
+#![feature(min_const_generics)]
 #![allow(dead_code)]
+
 
 extern crate ff;
 extern crate byteorder;

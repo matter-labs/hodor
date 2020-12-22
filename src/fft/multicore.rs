@@ -31,7 +31,7 @@ impl Worker {
     }
 
     pub fn new() -> Worker {
-        let cpus = num_cpus::get();
+        let cpus = num_cpus::get_physical();
         Self::new_with_cpus(cpus)
     }
 

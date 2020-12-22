@@ -157,7 +157,7 @@ impl<F: PrimeField> ConstraintDensity<F> for AnywhereButInSetConstraint {
         let divisor = inverse_divisors.icoset_fft(&worker);
 
         let mut divisor_lde = divisor.coset_lde(&worker, (evaluation_domain.size / column_domain.size) as usize)?;
-
+        
         divisor_lde.batch_inversion(&worker)?;
 
         Ok((divisor_lde, divisor_degree))
