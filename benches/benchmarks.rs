@@ -67,6 +67,40 @@ where
     group.finish();
 }
 
+fn log_parametrized_comparison_benchmark<T: Copy + Clone + TryInto<u64> + 'static, U, P>(
+    c: &mut Criterion, 
+    id: &str, 
+    with_throughput: bool, 
+    parameter_logs: &[T], 
+    preparation_function: P,
+    mut benchmarking_functions: Vec<(String, Box<dyn FnMut(&mut Bencher<'_>, &U) + 'static>)>,
+) where
+    P: Fn(&T) -> U,
+    <T as TryInto<u64>>::Error: std::fmt::Debug
+{
+    let mut group = c.benchmark_group(id);
+    let plot_config = PlotConfiguration::default()
+        .summary_scale(AxisScale::Logarithmic);
+    group.plot_config(plot_config);
+    for param in parameter_logs.iter() {
+        let log_param_as_u64: u64 = param.clone().try_into().unwrap_or_else(|e| panic!(format!("invalid parameter, can not convert to u64: {:?}", e)));
+        let param_as_u64: u64 = 1 << log_param_as_u64;
+        if with_throughput {
+            group.throughput(Throughput::Elements(param_as_u64));
+        }
+        let parameters = preparation_function(param);
+        for (name, executor) in benchmarking_functions.iter_mut() {
+            let pretty_description = format!("2^{} = {}", log_param_as_u64, param_as_u64);
+            let id = BenchmarkId::new(&*name, pretty_description);
+            group.bench_with_input(id, &parameters, |b, param| {
+                executor(b, param)
+            });
+        }
+
+    }
+    group.finish();
+}
+
 fn mul_assing_benchmark(c: &mut Criterion) {
     use rand::{Rng, XorShiftRng, SeedableRng};
     use fr::Fr;
@@ -138,34 +172,63 @@ fn transpose_square_32(c: &mut Criterion) {
     );
 }
 
-
-fn fft_sqrt_strategy(c: &mut Criterion) {
+fn compare_fft_unrolling(c: &mut Criterion) {
     use rand::{Rng, XorShiftRng, SeedableRng};
     use fr::Fr;
+    let log_2_sizes: Vec<usize> = vec![4, 6, 8, 10, 12, 14, 16, 18, 20, 22];
 
-    let log_2_sizes: Vec<usize> = vec![4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24];
+    type U = (hodor::fft::multicore::Worker, Vec<Fr>, Vec<Fr>, Fr);
 
-    bench_for_log_parameter_set(c, 
-        "FFT for 128 bit field", 
+    // trivial one, may be change later
+    let generator = |log_2_size: &usize| {
+        let log_2_size = *log_2_size;
+        let mut rng = XorShiftRng::from_seed([0x5dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
+        let worker = hodor::fft::multicore::Worker::new();
+        let size = 1 << log_2_size;
+        let values: Vec<Fr> = (0..size).map(|_| rng.gen::<Fr>()).collect();
+        let main_domain = hodor::domains::Domain::<Fr>::new_for_size(size as u64).unwrap();
+        let omega = main_domain.generator;
+        let (inner, outer) = hodor::fft::strided_fft::non_generic::calcualate_inner_and_outer_sizes(size);
+        let outer_omega = omega.pow(&[inner as u64]);
+        let twiddles = hodor::fft::strided_fft::utils::precompute_twiddle_factors(&outer_omega, outer);
+
+        (worker, values, twiddles, omega)
+    };
+    let executors = vec![
+        ("Unroll 128".to_string(),
+            Box::new(|bencher: &mut Bencher<'_>, params: &U| {
+                let (worker, values, twiddles, omega) = &params;
+                let mut values = values.to_vec();
+                bencher.iter(|| hodor::fft::strided_fft::non_generic::non_generic_radix_sqrt::<_, 128>(&mut values, &omega, &twiddles, &worker))
+            }) as Box<dyn FnMut(&mut Bencher<'_>, &U) + 'static>
+        ),
+        ("Unroll 256".to_string(),
+            Box::new(|bencher: &mut Bencher<'_>, params: &U| {
+                let (worker, values, twiddles, omega) = &params;
+                let mut values = values.to_vec();
+                bencher.iter(|| hodor::fft::strided_fft::non_generic::non_generic_radix_sqrt::<_, 256>(&mut values, &omega, &twiddles, &worker))
+            }) as Box<dyn FnMut(&mut Bencher<'_>, &U) + 'static>
+        ),
+        ("Unroll 1024".to_string(),
+            Box::new(|bencher: &mut Bencher<'_>, params: &U| {
+                let (worker, values, twiddles, omega) = &params;
+                let mut values = values.to_vec();
+                bencher.iter(|| hodor::fft::strided_fft::non_generic::non_generic_radix_sqrt::<_, 1024>(&mut values, &omega, &twiddles, &worker))
+            }) as Box<dyn FnMut(&mut Bencher<'_>, &U) + 'static>
+        )
+    ];
+
+    log_parametrized_comparison_benchmark(c, 
+        "FFT for 128 bit field and various unrolls", 
         true,
         &log_2_sizes, 
-        |bencher, &log_2_size| {
-            let mut rng = XorShiftRng::from_seed([0x5dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
-            let worker = hodor::fft::multicore::Worker::new();
-            let size = 1 << log_2_size;
-            let mut values: Vec<Fr> = (0..size).map(|_| rng.gen::<Fr>()).collect();
-            let main_domain = hodor::domains::Domain::<Fr>::new_for_size(size as u64).unwrap();
-            let omega = main_domain.generator;
-            let (inner, outer) = hodor::fft::strided_fft::non_generic::calcualate_inner_and_outer_sizes(size);
-            let outer_omega = omega.pow(&[inner as u64]);
-            let twiddles = hodor::fft::strided_fft::utils::precompute_twiddle_factors(&outer_omega, outer);
-            bencher.iter(|| hodor::fft::strided_fft::non_generic::non_generic_radix_sqrt::<_, 1024>(&mut values, &omega, &twiddles, &worker))
-        }
+        generator,
+        executors
     );
 }
 
 // criterion_group!(benches, mul_assing_benchmark, fft_rec_small, transpose_square_16, transpose_square_32, fft_sqrt_strategy);
-criterion_group!(benches, mul_assing_benchmark, fft_rec_small, fft_sqrt_strategy);
+criterion_group!(benches, mul_assing_benchmark, fft_rec_small, compare_fft_unrolling);
 criterion_main!(benches);
 
 // criterion_group!(
