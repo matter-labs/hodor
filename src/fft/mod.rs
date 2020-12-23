@@ -1,8 +1,9 @@
-pub(crate) mod multicore;
+pub mod multicore;
 pub(crate) mod fft;
 pub(crate) mod lde;
 
-
+pub mod mem_utils;
+pub mod strided_fft;
 /*
 
 This module contains a set of functions to implement FFT and LDE operations in the efficient manner. Users of the "nightly"
@@ -19,8 +20,8 @@ use cfg_if;
 mod prefetch_lde;
 #[cfg(feature = "nightly")]
 mod prefetch_fft;
-#[cfg(feature = "nightly")]
-mod prefetch;
+// #[cfg(feature = "nightly")]
+// mod prefetch;
 
 use ff::PrimeField;
 use self::multicore::Worker;

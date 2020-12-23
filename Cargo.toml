@@ -28,7 +28,9 @@ cfg-if = "1.0"
 indexmap = "1"
 objekt = "0.1"
 
-prefetch = {version = "0.2", optional = true}
+[dev-dependencies]
+criterion = "0.3"
 
-[features]
-nightly = ["prefetch"]
+[[bench]]
+name = "benchmarks"
+harness = false

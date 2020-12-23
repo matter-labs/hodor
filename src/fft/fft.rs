@@ -124,7 +124,7 @@ pub(crate) fn parallel_fft<F: PrimeField>(
     });
 }
 
-fn subview<T: Sized, const N: usize>(slice: &[T]) -> &[[T; N]] {
+pub(crate) fn subview<T: Sized, const N: usize>(slice: &[T]) -> &[[T; N]] {
     assert_eq!(slice.len() % N, 0);
     let len = slice.len() / N;
     let array_slice: &[[T; N]] = unsafe { std::slice::from_raw_parts(slice.as_ptr().cast(), len) };
@@ -132,7 +132,7 @@ fn subview<T: Sized, const N: usize>(slice: &[T]) -> &[[T; N]] {
     array_slice
 }
 
-fn subview_mut<T: Sized, const N: usize>(slice: &mut [T]) -> &mut [[T; N]] {
+pub(crate) fn subview_mut<T: Sized, const N: usize>(slice: &mut [T]) -> &mut [[T; N]] {
     assert_eq!(slice.len() % N, 0);
     let len = slice.len() / N;
     let array_slice: &mut [[T; N]] = unsafe { std::slice::from_raw_parts_mut(slice.as_mut_ptr().cast(), len) };
