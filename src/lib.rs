@@ -1,4 +1,4 @@
-#![feature(min_const_generics)]
+#![feature(min_const_generics, asm)]
 #![allow(dead_code)]
 
 
@@ -28,9 +28,12 @@ pub mod precomputations;
 pub mod verifier;
 pub mod prover;
 
+pub mod optimized_fields;
+
 mod experiments;
 
 pub(crate) mod bn256;
+pub mod f125;
 
 use ff::{Field, PrimeField, PrimeFieldRepr};
 

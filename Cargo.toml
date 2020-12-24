@@ -13,7 +13,7 @@ publish = false
 [dependencies]
 rand = "0.4"
 byteorder = "1"
-ff = {package = "ff_ce", version = "0.12", features = ["derive"]}
+ff = {package = "ff_ce", version = "0.12", features = ["derive", "asm_derive"]}
 hex = "0.4.2"
 tiny-keccak = "1.5"
 rust-crypto = "0.2"

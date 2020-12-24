@@ -1,3 +1,5 @@
+#![feature(asm, test)]
+
 extern crate ff;
 extern crate rand;
 extern crate hodor;
@@ -16,8 +18,18 @@ mod fr {
 mod fr256 {
     use crate::ff::*;
     #[derive(PrimeField)]
-    #[PrimeFieldModulus = "21888242871839275222246405745257275088696311157297823662689037894645226208583"]
-    #[PrimeFieldGenerator = "2"]
+    #[PrimeFieldModulus = "3618502788666131213697322783095070105623107215331596699973092056135872020481"]
+    #[PrimeFieldGenerator = "3"]
+    pub struct Fr(FrRepr);
+}
+
+mod fr256_asm_generated {
+    use crate::ff::*;
+
+    #[derive(PrimeFieldAsm)]
+    #[PrimeFieldModulus = "3618502788666131213697322783095070105623107215331596699973092056135872020481"]
+    #[PrimeFieldGenerator = "3"]
+    #[UseADX = "true"]
     pub struct Fr(FrRepr);
 }
 
@@ -101,7 +113,29 @@ fn log_parametrized_comparison_benchmark<T: Copy + Clone + TryInto<u64> + 'stati
     group.finish();
 }
 
-fn mul_assing_benchmark(c: &mut Criterion) {
+fn add_assing_256(c: &mut Criterion) {
+    use rand::{Rng, XorShiftRng, SeedableRng};
+    use fr256::Fr;
+
+    let rng = &mut XorShiftRng::from_seed([0x5dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
+    let a: Fr = rng.gen();
+    let b: Fr = rng.gen();
+
+    c.bench_function("Add assign 256", |bencher| bencher.iter(|| black_box(a).add_assign(&black_box(b))));
+}
+
+fn add_assing_256_asm(c: &mut Criterion) {
+    use rand::{Rng, XorShiftRng, SeedableRng};
+    use hodor::optimized_fields::f252::Fr;
+
+    let rng = &mut XorShiftRng::from_seed([0x5dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
+    let a: Fr = rng.gen();
+    let b: Fr = rng.gen();
+
+    c.bench_function("Add assign 256 ASM", |bencher| bencher.iter(|| black_box(a).add_assign(&black_box(b))));
+}
+
+fn mul_assing_128(c: &mut Criterion) {
     use rand::{Rng, XorShiftRng, SeedableRng};
     use fr::Fr;
 
@@ -110,6 +144,53 @@ fn mul_assing_benchmark(c: &mut Criterion) {
     let b: Fr = rng.gen();
 
     c.bench_function("Mont mul assign 128", |bencher| bencher.iter(|| black_box(a).mul_assign(&black_box(b))));
+}
+
+fn mul_assing_128_asm(c: &mut Criterion) {
+    use rand::{Rng, XorShiftRng, SeedableRng};
+    use hodor::optimized_fields::f125::Fr;
+
+    let rng = &mut XorShiftRng::from_seed([0x5dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
+    let mut a: Fr = rng.gen();
+    let b: Fr = rng.gen();
+
+    c.bench_function("Mont mul assign 128 ASM manual", |bencher| bencher.iter(|| a.mul_assign(&b)));
+    // c.bench_function("Mont mul assign 256 ASM", |bencher| bencher.iter(|| black_box(a).mul_assign(&black_box(b))));
+}
+
+fn mul_assing_256(c: &mut Criterion) {
+    use rand::{Rng, XorShiftRng, SeedableRng};
+    use fr256::Fr;
+
+    let rng = &mut XorShiftRng::from_seed([0x5dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
+    let a: Fr = rng.gen();
+    let b: Fr = rng.gen();
+
+    c.bench_function("Mont mul assign 256", |bencher| bencher.iter(|| black_box(a).mul_assign(&black_box(b))));
+}
+
+fn mul_assing_256_asm_derive(c: &mut Criterion) {
+    use rand::{Rng, XorShiftRng, SeedableRng};
+    use fr256::Fr;
+
+    let rng = &mut XorShiftRng::from_seed([0x5dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
+    let mut a: Fr = rng.gen();
+    let b: Fr = rng.gen();
+
+    c.bench_function("Mont mul assign 256 ASM derived", |bencher| bencher.iter(|| a.mul_assign(&b)));
+    // c.bench_function("Mont mul assign 256", |bencher| bencher.iter(|| black_box(a).mul_assign(&black_box(b))));
+}
+
+fn mul_assing_256_asm(c: &mut Criterion) {
+    use rand::{Rng, XorShiftRng, SeedableRng};
+    use hodor::optimized_fields::f252::Fr;
+
+    let rng = &mut XorShiftRng::from_seed([0x5dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
+    let mut a: Fr = rng.gen();
+    let b: Fr = rng.gen();
+
+    c.bench_function("Mont mul assign 256 ASM manual", |bencher| bencher.iter(|| a.mul_assign(&b)));
+    // c.bench_function("Mont mul assign 256 ASM", |bencher| bencher.iter(|| black_box(a).mul_assign(&black_box(b))));
 }
 
 fn fft_rec_small(c: &mut Criterion) {
@@ -228,7 +309,9 @@ fn compare_fft_unrolling(c: &mut Criterion) {
 }
 
 // criterion_group!(benches, mul_assing_benchmark, fft_rec_small, transpose_square_16, transpose_square_32, fft_sqrt_strategy);
-criterion_group!(benches, mul_assing_benchmark, fft_rec_small, compare_fft_unrolling);
+// criterion_group!(benches, add_assing_256, add_assing_256_asm, mul_assing_128, mul_assing_128_asm, mul_assing_256, mul_assing_256_asm_derive, mul_assing_256_asm);
+criterion_group!(benches, mul_assing_128, mul_assing_128_asm);
+// criterion_group!(benches, mul_assing_128, mul_assing_256, fft_rec_small, compare_fft_unrolling);
 criterion_main!(benches);
 
 // criterion_group!(
