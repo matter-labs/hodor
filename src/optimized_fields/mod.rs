@@ -2,6 +2,7 @@ pub mod f252;
 pub mod naive_f252;
 pub mod f125;
 pub mod naive_f125;
+pub mod f252_asm_generated;
 
 use ff::*;
 

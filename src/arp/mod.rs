@@ -4,7 +4,7 @@ use crate::polynomials::*;
 use crate::fft::multicore::Worker;
 use crate::*;
 
-use ff::PrimeField;
+use crate::ff::PrimeField;
 // mod single_witness;
 mod per_register;
 pub(crate) mod mappings;

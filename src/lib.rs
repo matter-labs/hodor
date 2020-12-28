@@ -2,7 +2,6 @@
 #![allow(dead_code)]
 
 
-extern crate ff;
 extern crate byteorder;
 extern crate rand;
 extern crate hex;
@@ -13,6 +12,12 @@ extern crate blake2b_simd;
 extern crate blake2s_simd;
 #[macro_use] extern crate lazy_static;
 #[macro_use] extern crate cfg_if;
+
+pub mod ff {
+    extern crate ff;
+
+    pub use self::ff::*;
+}
 
 pub mod air;
 pub mod arp;
@@ -35,7 +40,7 @@ mod experiments;
 pub(crate) mod bn256;
 pub mod f125;
 
-use ff::{Field, PrimeField, PrimeFieldRepr};
+use self::ff::{Field, PrimeField, PrimeFieldRepr};
 
 #[derive(PrimeField)]
 #[PrimeFieldModulus = "257"]

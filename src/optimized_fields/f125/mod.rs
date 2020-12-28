@@ -31,6 +31,8 @@ const R2: FrRepr = FrRepr([0xfffffd737e000401, 0x00000001330fffff]);
 const MODULUS_LIMB_1: u64 = 0x3000000300000001;
 
 static ZERO_U64: u64 = 0;
+static ONE_U64: u64 = 1;
+static U64_MAX: u64 = 0xffffffffffffffff;
 
 // static MODULUS_0_STATIC: u64 = 1;
 static MODULUS_1_STATIC: u64 = 0x3000000300000001;
@@ -164,8 +166,7 @@ impl PrimeFieldRepr for FrRepr {
 
     #[inline(always)]
     fn mul2(&mut self) {
-        unimplemented!()
-        // *self = FrRepr(self::asm::double_nocarry_impl(self.0));
+        *self = FrRepr(self::asm::double_nocarry_impl(self.0));
     }
 
     #[inline(always)]
@@ -215,8 +216,7 @@ impl PrimeFieldRepr for FrRepr {
 
     #[inline(always)]
     fn sub_noborrow(&mut self, other: &FrRepr) {
-        unimplemented!()
-        // *self = FrRepr(self::asm::sub_noborrow_impl(self.0, other.0));
+        *self = FrRepr(self::asm::sub_noborrow_impl(self.0, other.0));
     }
 }
 
@@ -324,20 +324,17 @@ impl Field for Fr {
 
     #[inline]
     fn add_assign(&mut self, other: &Fr) {
-        unimplemented!()
-        // *self = Fr(FrRepr(add_with_reduction_impl(self.0.0, other.0.0)));
+        *self = Fr(FrRepr(add_with_reduction_impl(self.0.0, other.0.0)));
     }
 
     #[inline]
     fn double(&mut self) {
-        unimplemented!()
-        // *self = Fr(FrRepr(double_with_reduction_impl(self.0.0)));
+        *self = Fr(FrRepr(double_with_reduction_impl(self.0.0)));
     }
 
     #[inline]
     fn sub_assign(&mut self, other: &Fr) {
-        unimplemented!()
-        // *self = Fr(FrRepr(sub_with_reduction_impl(self.0.0, &other.0.0));
+        *self = Fr(FrRepr(sub_with_reduction_impl(self.0.0, other.0.0)));
     }
 
     #[inline]
@@ -411,9 +408,7 @@ impl Field for Fr {
     #[inline]
     fn mul_assign(&mut self, other: &Fr)
     {
-        *self = Fr(FrRepr(mont_mul_with_reduction_impl_schoolbook(self.0.0, other.0.0)));
-        // *self = Fr(FrRepr(mont_mul_with_reduction_impl_by_ref(&(&*self).0.0, &other.0.0)));
-        // *self = Fr(FrRepr(mont_mul_with_reduction_impl(self.0.0, other.0.0)));
+        *self = Fr(FrRepr(mont_mul_with_reduction_impl(self.0.0, other.0.0)));
     }
 
     #[inline]
@@ -442,25 +437,22 @@ pub fn reg_pass(a: [u64; 2], b: [u64; 2], c: [u64; 2]) -> [u64; 2] {
     add_nocarry_impl(tmp, c)
 }
 
-pub fn cios_debug(a: [u64; 2], b: [u64; 2]) -> [u64; 2] {
+#[inline(always)]
+pub fn cios_debug(a: &[u64; 2], b: &[u64; 2]) -> [u64; 2] {
     let mut m;
-
-    let q0 = 1;
-    let q1 = MODULUS_1_STATIC;
-    let [a0, a1] = a;
 
     const INV: u64 = 0xffffffffffffffffu64;
 
     // round 0 
     let b0 = b[0];
-    let (r0, carry) = full_width_mul(a0, b0);
+    let (r0, carry) = full_width_mul(a[0], b0);
     m = r0.wrapping_mul(INV);
     // everywhere semantic is arg0 + (arg1 * arg2)
-    let red_carry = mac_by_value_return_carry_only(r0, m, q0);
+    let red_carry = mac_by_value_return_carry_only(r0, m, 1);
 
     // loop over the rest
-    let (r1, carry) = mac_by_value(carry, a1, b0);
-    let (r0, red_carry) = mac_with_carry_by_value(r1, m, q1, red_carry);
+    let (r1, carry) = mac_by_value(carry, a[1], b0);
+    let (r0, red_carry) = mac_with_carry_by_value(r1, m, MODULUS_LIMB_1, red_carry);
 
     // this will check overflow in debug
     let r1 = red_carry + carry;
@@ -468,14 +460,14 @@ pub fn cios_debug(a: [u64; 2], b: [u64; 2]) -> [u64; 2] {
 
     // round 1
     let b1 = b[1];
-    let (r0, carry) = mac_by_value(r0, a0, b1);
+    let (r0, carry) = mac_by_value(r0, a[0], b1);
     m = r0.wrapping_mul(INV);
     // everywhere semantic is arg0 + (arg1 * arg2)
-    let red_carry = mac_by_value_return_carry_only(r0, m, q0);
+    let red_carry = mac_by_value_return_carry_only(r0, m, 1);
 
     // loop over the rest
-    let (r1, carry) = mac_with_carry_by_value(r1, a1, b1, carry);
-    let (r0, red_carry) = mac_with_carry_by_value(r1, m, q1, red_carry);
+    let (r1, carry) = mac_with_carry_by_value(r1, a[1], b1, carry);
+    let (r0, red_carry) = mac_with_carry_by_value(r1, m, MODULUS_LIMB_1, red_carry);
 
     // this will check overflow in debug
     let r1 = red_carry + carry;
@@ -487,49 +479,49 @@ pub fn cios_debug(a: [u64; 2], b: [u64; 2]) -> [u64; 2] {
 #[cfg(test)]
 mod test {
 
-    #[test]
-    fn test_asm_steps() {
-        let modulus: u128 = (0x3000000300000001 as u128) << 64 + 1;
-        use super::*;
-        use std::time::Instant;
-        use rand::{XorShiftRng, SeedableRng, Rng};
-        let rng = &mut XorShiftRng::from_seed([0x3dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
+    // #[test]
+    // fn test_asm_steps() {
+    //     let modulus: u128 = (0x3000000300000001 as u128) << 64 + 1;
+    //     use super::*;
+    //     use std::time::Instant;
+    //     use rand::{XorShiftRng, SeedableRng, Rng};
+    //     let rng = &mut XorShiftRng::from_seed([0x3dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
 
-        let a = [0xfffffffffffffffc, 0x3000000300000000];
-        let b = [0xfffffffffffffff0, 0x3000000300000000];
+    //     let a = [0xfffffffffffffffc, 0x3000000300000000];
+    //     let b = [0xfffffffffffffff0, 0x3000000300000000];
 
-        let c_asm = super::asm::mont_mul_with_reduction_impl(a, b);
-        let c_native = super::cios_debug(b, a);
+    //     let c_asm = super::asm::mont_mul_with_reduction_impl(a, b);
+    //     let c_native = super::cios_debug(b, a);
 
-        dbg!(c_asm);
-        dbg!(c_native);
-    }
+    //     dbg!(c_asm);
+    //     dbg!(c_native);
+    // }
 
 
-    #[test]
-    fn test_asm_f125() {
-        let modulus: u128 = (0x3000000300000001 as u128) << 64 + 1u128;
-        use super::*;
-        use std::time::Instant;
-        use rand::{XorShiftRng, SeedableRng, Rng};
-        let rng = &mut XorShiftRng::from_seed([0x3dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
+    // #[test]
+    // fn test_asm_f125() {
+    //     let modulus: u128 = (0x3000000300000001 as u128) << 64 + 1u128;
+    //     use super::*;
+    //     use std::time::Instant;
+    //     use rand::{XorShiftRng, SeedableRng, Rng};
+    //     let rng = &mut XorShiftRng::from_seed([0x3dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
 
-        for i in 0..100 {
-            let a: u128 = ((rng.gen::<u64>() as u128) << 64) + rng.gen::<u64>() as u128;
-            let b: u128 = ((rng.gen::<u64>() as u128) << 64) + rng.gen::<u64>() as u128;
+    //     for i in 0..100 {
+    //         let a: u128 = ((rng.gen::<u64>() as u128) << 64) + rng.gen::<u64>() as u128;
+    //         let b: u128 = ((rng.gen::<u64>() as u128) << 64) + rng.gen::<u64>() as u128;
 
-            let a = a % modulus;
-            let b = b % modulus;
+    //         let a = a % modulus;
+    //         let b = b % modulus;
 
-            let a = [a as u64, (a >> 64) as u64];
-            let b = [b as u64, (b >> 64) as u64];
+    //         let a = [a as u64, (a >> 64) as u64];
+    //         let b = [b as u64, (b >> 64) as u64];
 
-            let c_asm = super::asm::mont_mul_with_reduction_impl(a, b);
-            let c_native = super::cios_debug(b, a);
+    //         let c_asm = super::asm::mont_mul_with_reduction_impl(a, b);
+    //         let c_native = super::cios_debug(b, a);
 
-            assert_eq!(c_asm, c_native, "failed at attempt {}", i);
-        }
-    }
+    //         assert_eq!(c_asm, c_native, "failed at attempt {}", i);
+    //     }
+    // }
 
     // #[test]
     // fn try_pass_through_registers() {
@@ -593,14 +585,14 @@ mod test {
         let mut a_n: FrNaive = unsafe {std::mem::transmute(a)};
         let b_n: FrNaive = unsafe {std::mem::transmute(b)};
         for i in 0..SIZE {
-            // a.sub_assign(&b);
-            // a_n.sub_assign(&b_n);
+            a.sub_assign(&b);
+            a_n.sub_assign(&b_n);
 
-            // a.double();
-            // a_n.double();
+            a.double();
+            a_n.double();
 
-            // a.add_assign(&b);
-            // a_n.add_assign(&b_n);
+            a.add_assign(&b);
+            a_n.add_assign(&b_n);
 
             // a.square();
             // a_n.square();

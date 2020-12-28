@@ -30,6 +30,7 @@ objekt = "0.1"
 
 [dev-dependencies]
 criterion = "0.3"
+criterion_convenience = {path = "./tools/criterion_convenience"}
 
 [[bench]]
 name = "benchmarks"

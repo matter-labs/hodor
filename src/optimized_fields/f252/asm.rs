@@ -634,6 +634,176 @@ pub(crate) fn mont_mul_with_reduction_impl(a: &[u64; 4], b: &[u64; 4]) -> [u64; 
     [r0, r1, r2, r3]
 }
 
+
+#[allow(clippy::too_many_lines)]
+#[inline(always)]
+#[cfg(target_arch = "x86_64")]
+// #[cfg(all(target_arch = "x86_64", target_feature = "adx"))]
+pub(crate) fn mont_mul_with_partial_reduction_impl(a: &[u64; 4], b: &[u64; 4]) -> [u64; 4] {
+    // we also manually use the facts about INV = -1 and modulus[0] = 1, modulus[1] = modulus[2] = 0
+
+    let mut r0: u64;
+    let mut r1: u64;
+    let mut r2: u64;
+    let mut r3: u64;
+
+    unsafe {
+        asm!(
+            // round 0
+            "mov rdx, qword ptr [{a_ptr} + 0]",
+            "xor r8d, r8d",
+            "mulx r14, r13, qword ptr [{b_ptr} + 0]",
+            "mulx r9, r8, qword ptr [{b_ptr} + 8]",
+            "mulx r10, r15, qword ptr [{b_ptr} + 16]",
+            "mulx r12, rdi, qword ptr [{b_ptr} + 24]",
+            "mov rdx, r13", 
+            // here we multiply rdx * inv -> k0 (we ignore r11), so just negate
+            "neg rdx",
+            "xor r11d, r11d", // clear the flags, and from now on r11 == 0
+            "adcx r14, r8", 
+            "adox r10, rdi", 
+            // start calculating immediately
+            "mulx r8, rdi, qword ptr [rip + {q3_ptr}]", 
+            "adcx r15, r9",
+            "adox r12, r11",
+            "adcx r10, r11",
+            "adox r13, rdx", 
+            "adcx r14, r11",
+            "adox r14, r11", 
+            "adcx r15, r11", 
+            "adox r15, r11", 
+            "adcx r10, rdi",
+            "adox r10, r11", 
+            "adcx r12, r8", 
+            "adox r12, r11",
+
+            // round 1
+            "mov rdx, qword ptr [{a_ptr} + 8]",
+            "mulx r9, r8, qword ptr [{b_ptr} + 0]",
+            "mulx r11, rdi, qword ptr [{b_ptr} + 8]",
+            "adcx r14, r8",
+            "adox r15, r9",
+            "mulx r9, r8, qword ptr [{b_ptr} + 16]",
+            "adcx r15, rdi",
+            "adox r10, r11",
+            "mulx r13, rdi, qword ptr [{b_ptr} + 24]",
+            "adcx r10, r8",
+            "adox r12, rdi",
+            "adcx r12, r9",
+            "mov rdi, 0",
+            "adox r13, rdi",
+            "adcx r13, rdi",
+            "mov rdx, r14",
+            "neg rdx",
+            "mulx r11, rdi, qword ptr [rip + {q3_ptr}]",
+            "xor r8d, r8d", // clear the flags!, r8 == 0
+            "adox r14, rdx",
+            "adcx r15, r8",
+            "adox r15, r8",
+            "adcx r10, r8",
+            "adox r10, r8",
+            "adcx r12, r8",
+            "adox r12, rdi",
+            "adcx r13, r11",
+            "adox r13, r8",
+
+            // round 2
+            "mov rdx, qword ptr [{a_ptr} + 16]",
+            "mulx r9, r8, qword ptr [{b_ptr} + 0]",
+            "mulx r11, rdi, qword ptr [{b_ptr} + 8]",
+            "adcx r15, r8",
+            "adox r10, r9",
+            "mulx r9, r8, qword ptr [{b_ptr} + 16]",
+            "adcx r10, rdi",
+            "adox r12, r11",
+            "mulx r14, rdi, qword ptr [{b_ptr} + 24]",
+            "adcx r12, r8",
+            "adox r13, r9",
+            "adcx r13, rdi",
+            "mov r9, 0",
+            "adox r14, r9",
+            "adcx r14, r9",
+            "mov rdx, r15",
+            "neg rdx",
+            "mulx r11, rdi, qword ptr [rip + {q3_ptr}]",
+            "xor r8d, r8d", // clear the flags!, r8 == 0
+            "adox r15, rdx",
+            "adcx r10, r8",
+            "adox r10, r8",
+            "adcx r12, r8",
+            "adox r12, r8",
+            "adcx r13, r8",
+            "adox r13, rdi",
+            "adcx r14, r11",
+            "adox r14, r8",
+
+            // round 3
+            "mov rdx, qword ptr [{a_ptr} + 24]",
+            "mulx r9, r8, qword ptr [{b_ptr} + 0]",
+            "mulx r11, rdi, qword ptr [{b_ptr} + 8]",
+            "adcx r10, r8",
+            "adox r12, r9",
+            "mulx r9, r8, qword ptr [{b_ptr} + 16]",
+            "adcx r12, rdi",
+            "adox r13, r11",
+            "mulx r15, rdi, qword ptr [{b_ptr} + 24]",
+            "adcx r13, r8",
+            "adox r14, r9",
+            "adcx r14, rdi",
+            "mov r9, 0",
+            "adox r15, r9",
+            "adcx r15, r9",
+            "mov rdx, r10",
+            "neg rdx",
+            "mulx r9, rdi, qword ptr [rip + {q3_ptr}]",
+            "xor r8d, r8d", // clear the flags! r8 == 0
+            "adox r10, rdx",
+            "adcx r12, r8",
+            "adox r12, r8",
+            "adcx r13, r8",
+            "adox r13, r8",
+            "adcx r14, r8",
+            "adox r14, rdi",
+            "adcx r15, r9",
+            "adox r15, r8",
+
+            "mov r8, r12",
+            "sub r8, 1",
+            "mov r9, r13",
+            "sbb r9, 0",
+            "mov r10, r14",
+            "sbb r10, 0",
+            "mov r11, r15",
+            "mov rdx, qword ptr [rip + {q3_ptr}]",
+            "sbb r11, rdx",
+
+            // if CF == 1 then original result was ok (reduction wa not necessary)
+            // so if not carry (CMOVNQ) then we copy 
+            "cmovnc r12, r8",
+            "cmovnc r13, r9",
+            "cmovnc r14, r10",
+            "cmovnc r15, r11",  
+            // end of reduction
+            q3_ptr = sym MODULUS_3_STATIC,
+            a_ptr = in(reg) a.as_ptr(),
+            b_ptr = in(reg) b.as_ptr(),
+            out("rdx") _, 
+            out("rdi") _, 
+            out("r8") _, 
+            out("r9") _, 
+            out("r10") _, 
+            out("r11") _, 
+            out("r12") r0, 
+            out("r13") r1, 
+            out("r14") r2, 
+            out("r15") r3,
+            options(pure, readonly, nostack)
+        );
+    }
+
+    [r0, r1, r2, r3]
+}
+
 #[allow(clippy::too_many_lines)]
 #[inline(always)]
 #[cfg(target_arch = "x86_64")]

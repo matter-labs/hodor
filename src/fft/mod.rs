@@ -430,7 +430,7 @@ fn test_worker_size() {
     const BASE: usize = 1 << LOG_N;
     let rng = &mut XorShiftRng::from_seed([0x3dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
     
-    use ff::Field;
+    use crate::ff::Field;
     use crate::experiments::Fr;
     // use crate::bn256::Fr;
     // use crate::Fr;

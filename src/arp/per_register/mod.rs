@@ -1,4 +1,4 @@
-use ff::PrimeField;
+use crate::ff::PrimeField;
 
 use super::*;
 use crate::domains::Domain;
