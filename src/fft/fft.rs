@@ -1,5 +1,5 @@
 use ff::PrimeField;
-use super::multicore::*;
+use super::{mem_utils::prefetch_element, multicore::*};
 use crate::utils::*;
 
 pub(crate) fn best_fft<F: PrimeField>(a: &mut [F], worker: &Worker, omega: &F, log_n: u32, use_cpus_hint: Option<usize>)
@@ -138,6 +138,47 @@ pub(crate) fn subview_mut<T: Sized, const N: usize>(slice: &mut [T]) -> &mut [[T
     let array_slice: &mut [[T; N]] = unsafe { std::slice::from_raw_parts_mut(slice.as_mut_ptr().cast(), len) };
 
     array_slice
+}
+
+#[inline(always)]
+pub(crate) fn get_mut_assuming_not_overlapping<T: Sized>(slice: &mut [T], idx: usize) -> (&mut [T], &mut T) {
+    let alias = unsafe {
+        let ptr = &mut slice[idx] as *mut T;
+
+        &mut (*ptr)
+    };
+
+    (slice, alias)
+}
+
+#[inline(always)]
+pub(crate) fn copy_mut_alias<T: Sized>(slice: &mut [T]) -> (&mut [T], &mut [T]) {
+    let alias = unsafe {
+        let ptr = slice as *mut [T];
+
+        &mut (*ptr)
+    };
+
+    (slice, alias)
+}
+
+#[inline(always)]
+pub(crate) fn get_as_square<T: Sized, const N: usize>(slice: &mut [[T; N]], row: usize, column: usize, width_in_units_of_n: usize) -> [&mut [T; N]; N] {
+    use std::mem::MaybeUninit;
+    let mut array: [MaybeUninit<&mut [T; N]>; N] = MaybeUninit::uninit_array();
+    let mut view = slice;
+    debug_assert_eq!(view.len(), width_in_units_of_n * width_in_units_of_n * N);
+    let idx = row * N * width_in_units_of_n + column;
+    for i in 0..N {
+        let (new_view, chunk) = get_mut_assuming_not_overlapping(view, idx + i * width_in_units_of_n);
+        prefetch_element(chunk);
+        array[i] = MaybeUninit::new(chunk);
+        view = new_view;
+    }
+
+    let array = unsafe { MaybeUninit::array_assume_init(array) };
+
+    array
 }
 
 fn allocate_zeroable_array_without_stack<T: Sized, const N: usize>(size: usize) -> Vec<[T; N]> {

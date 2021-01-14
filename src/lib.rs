@@ -1,4 +1,6 @@
 #![feature(min_const_generics, asm)]
+#![feature(maybe_uninit_uninit_array)]
+#![feature(maybe_uninit_array_assume_init)]
 #![allow(dead_code)]
 
 
