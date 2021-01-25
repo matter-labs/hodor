@@ -27,6 +27,7 @@ lazy_static = "1.4"
 cfg-if = "1.0"
 indexmap = "1"
 objekt = "0.1"
+openzkp_primefield = {package = "zkp-primefield", git = "https://github.com/0xProject/OpenZKP"}
 
 [dev-dependencies]
 criterion = "0.3"

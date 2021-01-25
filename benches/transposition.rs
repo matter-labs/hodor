@@ -43,7 +43,8 @@ fn transpose_square_16(c: &mut Criterion) {
 fn transpose_square_16_by_chunks(c: &mut Criterion) {
     use hodor::optimized_fields::naive_f125::Fr;
 
-    let log_2_sizes: Vec<usize> = vec![18, 20, 22, 24];
+    let log_2_sizes: Vec<usize> = vec![8,10];
+    // let log_2_sizes: Vec<usize> = vec![18, 20, 22, 24];
 
     type U = (Vec<Fr>, usize);
 
@@ -73,45 +74,45 @@ fn transpose_square_16_by_chunks(c: &mut Criterion) {
                 bencher.iter(|| hodor::fft::strided_fft::shuffle::transpose_square_with_chunks::<_, 2>(&mut values, *size))
             }) as Box<dyn FnMut(&mut Bencher<'_>, &U) + 'static>
         ),
-        ("4x4".to_string(),
-            Box::new(|bencher: &mut Bencher<'_>, params: &U| {
-                let (values, size) = &params;
-                let mut values = values.to_vec();
-                bencher.iter(|| hodor::fft::strided_fft::shuffle::transpose_square_with_chunks::<_, 4>(&mut values, *size))
-            }) as Box<dyn FnMut(&mut Bencher<'_>, &U) + 'static>
-        ),
-        ("8x8".to_string(),
-            Box::new(|bencher: &mut Bencher<'_>, params: &U| {
-                let (values, size) = &params;
-                let mut values = values.to_vec();
-                bencher.iter(|| hodor::fft::strided_fft::shuffle::transpose_square_with_chunks::<_, 8>(&mut values, *size))
-            }) as Box<dyn FnMut(&mut Bencher<'_>, &U) + 'static>
-        ),
-        ("2x2_alt".to_string(),
-            Box::new(|bencher: &mut Bencher<'_>, params: &U| {
-                let (values, size) = &params;
-                let mut values = values.to_vec();
-                bencher.iter(|| hodor::fft::strided_fft::shuffle::transpose_square_with_square_tiles::<_, 2>(&mut values, *size))
-            }) as Box<dyn FnMut(&mut Bencher<'_>, &U) + 'static>
-        ),
-        ("4x4_alt".to_string(),
-            Box::new(|bencher: &mut Bencher<'_>, params: &U| {
-                let (values, size) = &params;
-                let mut values = values.to_vec();
-                bencher.iter(|| hodor::fft::strided_fft::shuffle::transpose_square_with_square_tiles::<_, 4>(&mut values, *size))
-            }) as Box<dyn FnMut(&mut Bencher<'_>, &U) + 'static>
-        ),
-        ("8x8_alt".to_string(),
-            Box::new(|bencher: &mut Bencher<'_>, params: &U| {
-                let (values, size) = &params;
-                let mut values = values.to_vec();
-                bencher.iter(|| hodor::fft::strided_fft::shuffle::transpose_square_with_square_tiles::<_, 8>(&mut values, *size))
-            }) as Box<dyn FnMut(&mut Bencher<'_>, &U) + 'static>
-        ),
+        // ("4x4".to_string(),
+        //     Box::new(|bencher: &mut Bencher<'_>, params: &U| {
+        //         let (values, size) = &params;
+        //         let mut values = values.to_vec();
+        //         bencher.iter(|| hodor::fft::strided_fft::shuffle::transpose_square_with_chunks::<_, 4>(&mut values, *size))
+        //     }) as Box<dyn FnMut(&mut Bencher<'_>, &U) + 'static>
+        // ),
+        // ("8x8".to_string(),
+        //     Box::new(|bencher: &mut Bencher<'_>, params: &U| {
+        //         let (values, size) = &params;
+        //         let mut values = values.to_vec();
+        //         bencher.iter(|| hodor::fft::strided_fft::shuffle::transpose_square_with_chunks::<_, 8>(&mut values, *size))
+        //     }) as Box<dyn FnMut(&mut Bencher<'_>, &U) + 'static>
+        // ),
+        // ("2x2_alt".to_string(),
+        //     Box::new(|bencher: &mut Bencher<'_>, params: &U| {
+        //         let (values, size) = &params;
+        //         let mut values = values.to_vec();
+        //         bencher.iter(|| hodor::fft::strided_fft::shuffle::transpose_square_with_square_tiles::<_, 2>(&mut values, *size))
+        //     }) as Box<dyn FnMut(&mut Bencher<'_>, &U) + 'static>
+        // ),
+        // ("4x4_alt".to_string(),
+        //     Box::new(|bencher: &mut Bencher<'_>, params: &U| {
+        //         let (values, size) = &params;
+        //         let mut values = values.to_vec();
+        //         bencher.iter(|| hodor::fft::strided_fft::shuffle::transpose_square_with_square_tiles::<_, 4>(&mut values, *size))
+        //     }) as Box<dyn FnMut(&mut Bencher<'_>, &U) + 'static>
+        // ),
+        // ("8x8_alt".to_string(),
+        //     Box::new(|bencher: &mut Bencher<'_>, params: &U| {
+        //         let (values, size) = &params;
+        //         let mut values = values.to_vec();
+        //         bencher.iter(|| hodor::fft::strided_fft::shuffle::transpose_square_with_square_tiles::<_, 8>(&mut values, *size))
+        //     }) as Box<dyn FnMut(&mut Bencher<'_>, &U) + 'static>
+        // ),
     ];
 
     log_parametrized_comparison_benchmark(c, 
-        "Transpose square for 16 byte values in chunks", 
+        "Transpose-square-for-16-byte-values-in-chunks", 
         true,
         &log_2_sizes, 
         generator,
