@@ -1,9 +1,10 @@
 pub mod multicore;
-pub(crate) mod fft;
+pub mod fft;
 pub(crate) mod lde;
 
 pub mod mem_utils;
 pub mod strided_fft;
+
 /*
 
 This module contains a set of functions to implement FFT and LDE operations in the efficient manner. Users of the "nightly"

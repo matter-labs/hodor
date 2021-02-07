@@ -200,7 +200,7 @@ pub fn transpose_square_segment<T: Sized + Copy, const N: usize>(matrix: &mut [T
     }
 }
 
-pub fn transpose_square_with_chunks<T: Sized + Copy, const N: usize>(matrix: &mut [T], size: usize) {
+pub fn transpose_square_with_chunks<T: Sized , const N: usize>(matrix: &mut [T], size: usize) {
     debug_assert_eq!(matrix.len(), size * size);
     use super::super::fft::*;
     let view_as_chunked_rows = subview_mut::<_, N>(matrix);

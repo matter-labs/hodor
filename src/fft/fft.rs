@@ -2,7 +2,7 @@ use ff::PrimeField;
 use super::{mem_utils::prefetch_element, multicore::*};
 use crate::utils::*;
 
-pub(crate) fn best_fft<F: PrimeField>(a: &mut [F], worker: &Worker, omega: &F, log_n: u32, use_cpus_hint: Option<usize>)
+pub  fn best_fft<F: PrimeField>(a: &mut [F], worker: &Worker, omega: &F, log_n: u32, use_cpus_hint: Option<usize>)
 {
     let log_cpus = if let Some(hint) = use_cpus_hint {
         assert!(hint <= worker.cpus);
@@ -18,7 +18,7 @@ pub(crate) fn best_fft<F: PrimeField>(a: &mut [F], worker: &Worker, omega: &F, l
     }
 }
 
-pub(crate) fn serial_fft<F: PrimeField>(a: &mut [F], omega: &F, log_n: u32)
+pub  fn serial_fft<F: PrimeField>(a: &mut [F], omega: &F, log_n: u32)
 {
     #[inline(always)]
     fn bitreverse(mut n: u32, l: u32) -> u32 {
@@ -65,7 +65,7 @@ pub(crate) fn serial_fft<F: PrimeField>(a: &mut [F], omega: &F, log_n: u32)
     }
 }
 
-pub(crate) fn parallel_fft<F: PrimeField>(
+pub  fn parallel_fft<F: PrimeField>(
     a: &mut [F],
     worker: &Worker,
     omega: &F,
@@ -124,7 +124,7 @@ pub(crate) fn parallel_fft<F: PrimeField>(
     });
 }
 
-pub(crate) fn subview<T: Sized, const N: usize>(slice: &[T]) -> &[[T; N]] {
+pub  fn subview<T: Sized, const N: usize>(slice: &[T]) -> &[[T; N]] {
     assert_eq!(slice.len() % N, 0);
     let len = slice.len() / N;
     let array_slice: &[[T; N]] = unsafe { std::slice::from_raw_parts(slice.as_ptr().cast(), len) };
@@ -132,7 +132,7 @@ pub(crate) fn subview<T: Sized, const N: usize>(slice: &[T]) -> &[[T; N]] {
     array_slice
 }
 
-pub(crate) fn subview_mut<T: Sized, const N: usize>(slice: &mut [T]) -> &mut [[T; N]] {
+pub  fn subview_mut<T: Sized, const N: usize>(slice: &mut [T]) -> &mut [[T; N]] {
     assert_eq!(slice.len() % N, 0);
     let len = slice.len() / N;
     let array_slice: &mut [[T; N]] = unsafe { std::slice::from_raw_parts_mut(slice.as_mut_ptr().cast(), len) };
@@ -141,7 +141,7 @@ pub(crate) fn subview_mut<T: Sized, const N: usize>(slice: &mut [T]) -> &mut [[T
 }
 
 #[inline(always)]
-pub(crate) fn get_mut_assuming_not_overlapping<T: Sized>(slice: &mut [T], idx: usize) -> (&mut [T], &mut T) {
+pub  fn get_mut_assuming_not_overlapping<T: Sized>(slice: &mut [T], idx: usize) -> (&mut [T], &mut T) {
     let alias = unsafe {
         let ptr = &mut slice[idx] as *mut T;
 
@@ -152,7 +152,7 @@ pub(crate) fn get_mut_assuming_not_overlapping<T: Sized>(slice: &mut [T], idx: u
 }
 
 #[inline(always)]
-pub(crate) fn copy_mut_alias<T: Sized>(slice: &mut [T]) -> (&mut [T], &mut [T]) {
+pub  fn copy_mut_alias<T: Sized>(slice: &mut [T]) -> (&mut [T], &mut [T]) {
     let alias = unsafe {
         let ptr = slice as *mut [T];
 
@@ -163,7 +163,7 @@ pub(crate) fn copy_mut_alias<T: Sized>(slice: &mut [T]) -> (&mut [T], &mut [T]) 
 }
 
 #[inline(always)]
-pub(crate) fn get_as_square<T: Sized, const N: usize>(slice: &mut [[T; N]], row: usize, column: usize, width_in_units_of_n: usize) -> [&mut [T; N]; N] {
+pub  fn get_as_square<T: Sized, const N: usize>(slice: &mut [[T; N]], row: usize, column: usize, width_in_units_of_n: usize) -> [&mut [T; N]; N] {
     use std::mem::MaybeUninit;
     let mut array: [MaybeUninit<&mut [T; N]>; N] = MaybeUninit::uninit_array();
     let mut view = slice;
@@ -210,7 +210,7 @@ fn allocate_zeroable<T: Sized>(size: usize) -> Vec<T> {
 
 // we expect that a sub-fft fits into the L2 or L3 cache line
 // #[cfg(feature = "const_generic_fft")]
-pub(crate) fn parallel_cache_friendly_fft<F: PrimeField, const N: usize>(
+pub  fn parallel_cache_friendly_fft<F: PrimeField, const N: usize>(
     a: &mut [F],
     worker: &Worker,
     omega: &F,
@@ -346,7 +346,7 @@ pub(crate) fn parallel_cache_friendly_fft<F: PrimeField, const N: usize>(
 
 // we expect that a sub-fft fits into the L2 or L3 cache line
 // #[cfg(feature = "const_generic_fft")]
-pub(crate) fn parallel_partitioned_fft<F: PrimeField, const N: usize, const K: usize>(
+pub  fn parallel_partitioned_fft<F: PrimeField, const N: usize, const K: usize>(
     a: &mut [F],
     worker: &Worker,
     omega: &F,
@@ -480,7 +480,7 @@ pub(crate) fn parallel_partitioned_fft<F: PrimeField, const N: usize, const K: u
 
 // we expect that a sub-fft fits into the L2 or L3 cache line
 // #[cfg(feature = "const_generic_fft")]
-pub(crate) fn parallel_cache_friendly_fft_without_stack_spilling<F: PrimeField, const N: usize>(
+pub  fn parallel_cache_friendly_fft_without_stack_spilling<F: PrimeField, const N: usize>(
     a: &mut [F],
     worker: &Worker,
     omega: &F,
@@ -646,7 +646,7 @@ fn make_lowest_bits_to_be_highest(n: usize, l: u32, h: u32) -> usize {
     ((n & mask_low) << h) | (n >> l)
 }
 
-pub(crate) fn serial_cache_friendly_fft<F: PrimeField, const N: usize>(
+pub  fn serial_cache_friendly_fft<F: PrimeField, const N: usize>(
     a: &mut [F; N], 
     omega: &F, 
 ) {
