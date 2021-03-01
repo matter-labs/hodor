@@ -94,8 +94,6 @@ impl<
 
         let mut f_ldes = Vec::with_capacity(witness_polys.len());
 
-        
-
         for w in witness_polys.iter() {
             let f_lde = w.clone().lde(&self.worker, self.lde_factor)?;
             f_ldes.push(f_lde);

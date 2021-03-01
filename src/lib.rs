@@ -37,7 +37,7 @@ pub mod prover;
 
 pub mod optimized_fields;
 
-mod experiments;
+pub mod experiments;
 
 pub(crate) mod bn256;
 pub mod f125;
@@ -55,12 +55,26 @@ pub enum SynthesisError {
     Unsatisfied(String),
     InvalidValue(String),
     DivisionByZero(String),
+    /// During synthesis, we lacked knowledge of a variable assignment.
+    AssignmentMissing,
+    /// During synthesis, our polynomials ended up being too high of degree
+    PolynomialDegreeTooLarge,
+    /// During proof generation, we encountered an I/O error with the CRS
+    IoError(std::io::Error),
 }
 
 use std::fmt;
 use std::error::Error;
 
-impl Error for SynthesisError {}
+impl Error for SynthesisError {    
+}
+
+impl From<std::io::Error> for SynthesisError {
+    fn from(e: std::io::Error) -> SynthesisError {
+        SynthesisError::IoError(e)
+    }
+}
+
 
 impl fmt::Display for SynthesisError {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
@@ -69,6 +83,9 @@ impl fmt::Display for SynthesisError {
             SynthesisError::Unsatisfied(descr) => write!(f, "Unsatisfied constraint, {}", descr),
             SynthesisError::InvalidValue(descr) => write!(f, "Invalid parameter value, {}", descr),
             SynthesisError::DivisionByZero(descr) => write!(f, "Division by zero, {}", descr),
+            SynthesisError::PolynomialDegreeTooLarge => write!(f, "polynomial degree is too large"),
+            SynthesisError::AssignmentMissing => write!(f, "an assignment for a variable could not be computed"),
+            SynthesisError::IoError(err) => write!(f, "encountered an I/O error {}", err),
         }
     }
 }

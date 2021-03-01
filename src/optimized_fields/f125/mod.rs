@@ -340,8 +340,8 @@ impl Field for Fr {
     #[inline]
     fn negate(&mut self) {
         if !self.is_zero() {
-            unimplemented!()
-            // *self = Fr(FrRepr(sub_noborrow_impl(MODULUS.0, self.0.0)));
+            // unimplemented!()
+            *self = Fr(FrRepr(sub_noborrow_impl(MODULUS.0, self.0.0)));
         }
     }
 
@@ -414,8 +414,9 @@ impl Field for Fr {
     #[inline]
     fn square(&mut self)
     {
-        unimplemented!()
+        // unimplemented!()
         // *self = Fr(FrRepr(mont_square_with_reduction_impl(self.0.0)));
+        self.mul_assign(&self.clone());
     }
 }
 

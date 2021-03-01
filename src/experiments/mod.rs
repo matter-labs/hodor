@@ -1,7 +1,7 @@
 pub mod fields;
 
 pub(crate) mod vdf;
-// pub(crate) mod cubic_vdf;
+pub mod cubic_vdf;
 pub mod vdf_simplified;
 mod square_root_calculator;
 mod vitaliks_da_stark;

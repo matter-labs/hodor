@@ -634,6 +634,67 @@ pub(crate) fn mont_mul_with_reduction_impl(a: &[u64; 4], b: &[u64; 4]) -> [u64; 
     [r0, r1, r2, r3]
 }
 
+fn mont_mul_new(a: &[u64;4], b: &[u64;4]) -> [u64;4]{
+
+    let mut r0: u64;
+    let mut r1: u64;
+    let mut r2: u64;
+    let mut r3: u64;
+    
+    unsafe{
+        asm!{
+            "mov rdx, qword ptr[{a_ptr} + 0]", // a0 @ rdx
+            "xor rax, rax",  // clear r10 register, we use this when we need 0 
+            "mulx r14, r13, qword ptr [{b_ptr} + 0]", // a0 * b0
+            "mulx r9, r8, qword ptr [{b_ptr} + 8]", // a0 * b1
+            
+            "mulx r8, rcx, qword ptr [{b_ptr} + 0]", // a0 * b0
+            "mulx r9, rax, qword ptr [{b_ptr} + 8]", // a0 * b1
+
+            // "adcx r8, rax", 
+            // "mulx r10, rax, qword ptr[{b_ptr} + 16]", // a0 * b2
+            // "adcx r9, rax", 
+            // "mulx r11, rax, qword ptr[{b_ptr} + 24]", // a0 * b2
+            // "adcx r10, rax", 
+            
+            "mov r12, r8",
+            "mov r13, r9",
+            "mov r14, r10",
+            "mov r15, r11",
+            // "mulx r14 r13 qword ptr[{b_ptr} + 0]",  // (r[0], r[1]) <- a[0] * b[0]
+            // "mulx r9 r8 qword ptr[{b_ptr} + 8]",    // (t[0], t[1]) <- a[0] * b[1]
+            // "mulx r15 r8 qword ptr[{b_ptr} + 16]",    // (r[2] , r[3]) <- a[0] * b[2]
+            // "mulx r9 r8 qword ptr[{b_ptr} + 8]",    // (t[2], r[4]) <- a[0] * b[3] (overwrite a[0]) 
+            a_ptr = in(reg) a.as_ptr(),
+            b_ptr = in(reg) b.as_ptr(),
+            out("rdx") _,
+            out("rdi") _,
+            out("r8") _,
+            out("r9") _,
+            out("r10") _,
+            out("r11") _,
+            out("r12") r0,
+            out("r13") r1,
+            out("r14") r2,
+            out("r15") r3,
+        }
+    };
+
+    [r0,r1,r2,r3]
+}
+
+#[test]
+fn test_new_mont_mul(){
+    // use rand::{XorShiftRng, SeedableRng, Rand};
+
+    let a: [u64;4] = [1,2,3,4]; 
+    let b: [u64;4] = [5,6,7,8]; 
+
+    let c = mont_mul_new(&a, &b);
+
+    println!("c {:?}", c);
+}
+
 
 #[allow(clippy::too_many_lines)]
 #[inline(always)]

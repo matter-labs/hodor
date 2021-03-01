@@ -94,7 +94,7 @@ impl<F: PrimeField, T: Transcript<F>, I: IOP<F>, P: FriProofPrototype<F, I>, PR:
         let g_iop_root = g_oracle.get_root();
         transcript.commit_bytes(g_iop_root.as_ref());
 
-        println!("Calculating DEEP part");
+        // println!("Calculating DEEP part");
 
         let (h1_lde, h2_lde, f_at_z_m, _g_at_z) = self.ali.calculate_deep(
             &witness_polys,
@@ -107,7 +107,7 @@ impl<F: PrimeField, T: Transcript<F>, I: IOP<F>, P: FriProofPrototype<F, I>, PR:
 
         let fri_final_poly_degree = self.fri_final_degree_plus_one;
 
-        println!("Calculating FRI part");
+        // println!("Calculating FRI part");
 
         let h1_fri_proof_proto = FRI::proof_from_lde(&h1_lde, self.lde_factor, fri_final_poly_degree, &self.worker)?;
         let h2_fri_proof_proto = FRI::proof_from_lde(&h2_lde, self.lde_factor, fri_final_poly_degree, &self.worker)?;

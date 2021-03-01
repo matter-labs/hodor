@@ -82,48 +82,6 @@ impl<F: PrimeField> ALIInstance<F, PerRegisterARP> {
             f_minus_f_at_z.mul_assign(&worker, divisor);
 
             h1_lde.add_assign(&worker, &f_minus_f_at_z);
-
-            // let alpha = transcript.get_challenge();
-            // let beta = transcript.get_challenge();
-            // let adjustment = self.max_constraint_power - 1;
-
-            // let adj_poly = if adjustment == 0 {
-            //     None
-            // } else {
-            //     let adj_poly = calculate_adjustment_polynomial_in_coset(
-            //         adjustment,
-            //         alpha,
-            //         beta,
-            //         &self.constraints_domain,
-            //         &self.precomputations,
-            //         &worker
-            //     );
-
-            //     Some(adj_poly)
-            // };
-
-            // let reg_num = match b_c.register {
-            //     Register::Register(reg_number) => {
-            //         reg_number
-            //     },
-            //     _ => {
-            //         unreachable!();
-            //     }
-            // };
-            // let mut witness_poly = (&witness[reg_num]).clone();
-            // witness_poly.as_mut()[0].sub_assign(&b_c.value.expect("is some"));
-            // let mut constraint_values = witness_poly.coset_lde(&worker, boundary_lde_factor as usize)?;
-            // if let Some(adj) = adj_poly {
-            //     constraint_values.mul_assign(&worker, &adj);
-            // } else {
-            //     // just apply alpha
-            //     constraint_values.scale(&worker, alpha);
-            // }
-
-            // let divisors = self.boundary_constraint_divisors.get(&(b_c.at_row as u64)).expect("is some");
-            // constraint_values.mul_assign(&worker, divisors);
-
-            // g_values.add_assign(&worker, &constraint_values);
         }
 
         let mut q_poly = Polynomial::<F, Coefficients>::new_for_size(2)?;

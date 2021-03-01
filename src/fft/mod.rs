@@ -4,6 +4,7 @@ pub(crate) mod lde;
 
 pub mod mem_utils;
 pub mod strided_fft;
+pub mod cooley_tukey_ntt;
 
 /*
 
@@ -60,6 +61,48 @@ cfg_if! {
 }
 
 
+pub fn distribute_powers<F: PrimeField>(coeffs: &mut [F], worker: &Worker, g: F)
+{
+    worker.scope(coeffs.len(), |scope, chunk| {
+        for (i, v) in coeffs.chunks_mut(chunk).enumerate() {
+            scope.spawn(move |_| {
+                let mut u = g.pow(&[(i * chunk) as u64]);
+                for v in v.iter_mut() {
+                    v.mul_assign(&u);
+                    u.mul_assign(&g);
+                }
+            });
+        }
+    });
+}
+
+pub fn distribute_powers_with_num_cpus<F: PrimeField>(coeffs: &mut [F], worker: &Worker, g: F, cpus: usize)
+{
+    assert!(cpus > 0);
+    let chunk = Worker::chunk_size_for_num_spawned_threads(coeffs.len(), cpus);
+    worker.scope(0, |scope, _| {
+        for (i, v) in coeffs.chunks_mut(chunk).enumerate() {
+            scope.spawn(move |_| {
+                let mut u = g.pow(&[(i * chunk) as u64]);
+                for v in v.iter_mut() {
+                    v.mul_assign(&u);
+                    u.mul_assign(&g);
+                }
+            });
+        }
+    });
+}
+
+pub fn distribute_powers_serial<F: PrimeField>(coeffs: &mut [F], g: F)
+{
+    let mut u = F::one();
+    for v in coeffs.iter_mut() {
+        v.mul_assign(&u);
+        u.mul_assign(&g);
+    }
+}
+
+
 pub(crate) mod dit_fft;
 pub(crate) mod radix4_fft;
 
@@ -109,20 +152,20 @@ fn test_sequential_radix4_fft()
     
 }
 
-pub fn distribute_powers<F: PrimeField>(coeffs: &mut [F], worker: &Worker, g: F)
-{
-    worker.scope(coeffs.len(), |scope, chunk| {
-        for (i, v) in coeffs.chunks_mut(chunk).enumerate() {
-            scope.spawn(move |_| {
-                let mut u = g.pow(&[(i * chunk) as u64]);
-                for v in v.iter_mut() {
-                    v.mul_assign(&u);
-                    u.mul_assign(&g);
-                }
-            });
-        }
-    });
-}
+// pub fn distribute_powers<F: PrimeField>(coeffs: &mut [F], worker: &Worker, g: F)
+// {
+//     worker.scope(coeffs.len(), |scope, chunk| {
+//         for (i, v) in coeffs.chunks_mut(chunk).enumerate() {
+//             scope.spawn(move |_| {
+//                 let mut u = g.pow(&[(i * chunk) as u64]);
+//                 for v in v.iter_mut() {
+//                     v.mul_assign(&u);
+//                     u.mul_assign(&g);
+//                 }
+//             });
+//         }
+//     });
+// }
 
 
 

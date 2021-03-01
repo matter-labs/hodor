@@ -3,6 +3,8 @@ use ff::*;
 mod asm;
 use asm::*;
 
+use crate::arp::InstanceProperties;
+
 #[derive(Copy, Clone, PartialEq, Eq, Default, Debug, Hash)]
 pub struct FrRepr([u64; 4]);
 
@@ -269,12 +271,13 @@ impl PrimeField for Fr {
     }
 
     fn from_raw_repr(r: FrRepr) -> Result<Fr, PrimeFieldDecodingError> {
+        // TODO
         let r = Fr(r);
-        if r.is_valid() {
-            Ok(r)
-        } else {
-            Err(PrimeFieldDecodingError::NotInField(format!("{}", r.0)))
-        }
+        Ok(r)
+        // if r.is_valid() {
+        // } else {
+        //     Err(PrimeFieldDecodingError::NotInField(format!("{}", r.0)))
+        // }
     }
 
     fn into_repr(&self) -> FrRepr {
@@ -410,7 +413,75 @@ impl Field for Fr {
     #[inline]
     fn mul_assign(&mut self, other: &Fr)
     {
-        *self = Fr(FrRepr(mont_mul_with_reduction_impl(&(&*self).0.0, &other.0.0)));
+        // *self = Fr(FrRepr(mont_mul_with_reduction_impl(&(&*self).0.0, &other.0.0)));
+
+
+
+        // let time = std::time::Instant::now();
+
+        let x = self.0.0;
+        let y = other.0.0;
+
+        let (a0, carry) = mac(0, x[0], y[0], 0);
+        let (a1, carry) = mac(0, x[0], y[1], carry);
+        let (a2, carry) = mac(0, x[0], y[2], carry);
+        let (a3, carry) = mac(0, x[0], y[3], carry);
+        // println!("[matter] r0 {}", time.elapsed().as_nanos());
+        let a4 = carry;
+        let (k, carry) = sbb(0, a0, 0);
+        let (a3, carry1) = mac(a3, k, MODULUS_LIMB_3, 0);
+        let (a1, carry) = mac(a1, x[1], y[0], carry);
+        let (a2, carry) = mac(a2, x[1], y[1], carry);
+        let (a3, carry) = mac(a3, x[1], y[2], carry);
+        let (a4, carry) = mac(a4, x[1], y[3], carry);
+        let a5 = carry;
+        let (k, carry) = sbb(0, a1, 0);
+        // println!("[matter] r1 {}", time.elapsed().as_nanos());
+        let (a4, carry1) = mac(a4, k, MODULUS_LIMB_3, carry1);
+        let (a2, carry) = mac(a2, x[2], y[0], carry);
+        let (a3, carry) = mac(a3, x[2], y[1], carry);
+        let (a4, carry) = mac(a4, x[2], y[2], carry);
+        let (a5, carry) = mac(a5, x[2], y[3], carry);
+        let a6 = carry;
+        let (k, carry) = sbb(0, a2, 0);
+        // println!("[matter] r2 {}", time.elapsed().as_nanos());
+        let (a5, carry1) = mac(a5, k, MODULUS_LIMB_3, carry1);
+        let (a3, carry) = mac(a3, x[3], y[0], carry);
+        let (a4, carry) = mac(a4, x[3], y[1], carry);
+        let (a5, carry) = mac(a5, x[3], y[2], carry);
+        let (a6, carry) = mac(a6, x[3], y[3], carry);
+        let a7 = carry;
+        let (k, carry) = sbb(0, a3, 0);
+        // println!("[matter] r3 {}", time.elapsed().as_nanos());
+        let (a6, carry1) = adc(a6, 0, carry1);
+        let (a4, carry) = adc(a4, 0, carry);
+        let (a5, carry) = adc(a5, 0, carry);
+        let (a6, carry) = mac(a6, k, MODULUS_LIMB_3, carry);
+        let a7 = a7 + carry + carry1;
+        // println!("[matter] r4 {}", time.elapsed().as_nanos());
+
+        // let mut repr = FrRepr::default();
+        // repr.as_mut()[0] = a4;
+        // repr.as_mut()[1] = a5;
+        // repr.as_mut()[2] = a6;
+        // repr.as_mut()[3] = a7;
+        self.0.as_mut()[0] = a4;
+        self.0.as_mut()[1] = a5;
+        self.0.as_mut()[2] = a6;
+        self.0.as_mut()[3] = a7;
+
+        // println!("[matter] r5 {}", time.elapsed().as_nanos());
+
+        // *self.0.as_mut() = [a4, a5, a6, a7];
+
+        if self.0 >= MODULUS{
+            self.0.sub_noborrow(&MODULUS);
+        }
+
+        // println!("[matter] r6 {}", time.elapsed().as_nanos());
+
+        // *self = Self::from_repr(repr).unwrap()
+
     }
 
     #[inline]
@@ -418,6 +489,26 @@ impl Field for Fr {
     {
         *self = Fr(FrRepr(mont_square_with_reduction_impl(&(&*self).0.0)));
     }
+}
+#[inline(always)]
+fn mac(a: u64, b: u64, c: u64, carry: u64) -> (u64, u64){
+
+    let ret = (a as u128) + ((b as u128) * (c as u128)) + (carry as u128);
+
+    // #[allow(clippy::cast_possible_truncation)]
+    (ret as u64, (ret >> 64) as u64)
+}
+#[inline(always)]
+fn adc(a: u64, b: u64, carry: u64) -> (u64, u64){
+    let ret = (a as u128) + (b as u128) + (carry as u128);
+
+    (ret as u64, (ret >> 64) as u64)
+}
+#[inline(always)]
+fn sbb(a: u64, b: u64, borrow: u64) -> (u64, u64){
+    let ret = (a as u128).wrapping_sub(b as u128 + borrow as u128);
+    
+    (ret as u64, (ret >> 127) as u64)
 }
 
 impl Fr {

@@ -3,6 +3,8 @@ use ff::PrimeField;
 pub mod trivial_coset_combiner;
 pub mod blake2s_trivial_iop;
 
+pub mod optimized_iop;
+
 /*
 
 This module contains an IOP abstraction that is implied to be instantiated by the Merkle tree, but 

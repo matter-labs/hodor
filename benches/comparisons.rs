@@ -4,8 +4,11 @@ use criterion::{
     measurement::{Measurement, WallTime},
     AxisScale, Bencher, BenchmarkGroup, BenchmarkId, Criterion, PlotConfiguration, Throughput,
 };
-use hodor::optimized_fields::f252::Fr;
-use hodor::optimized_fields::f252_asm_generated::Fr as FrAsm;
+use hodor::optimized_fields::f125::Fr as Fr125Asm;
+use hodor::optimized_fields::f252::Fr as FrAsm;
+use hodor::optimized_fields::f252_asm_generated::Fr as FrAsmG;
+use hodor::optimized_fields::naive_f125 as Fr125Naive;
+
 use hodor::{
     domains::Domain,
     ff::{Field, PrimeField},
@@ -80,13 +83,22 @@ impl OpenZkpBencher {
         offset: usize,
     ) {
         let mut values = Self::generate_random_values(size, rng);
-        let twiddle = Self::random_fr(rng);
 
         group.bench_function("openzkp-radix-2", |b| {
             b.iter(|| {
                 radix_2(&mut values, offset, 1);
             })
         });
+    }
+
+    fn bench_fft_butterfly_with_twiddles<R: Rng>(
+        group: &mut BenchmarkGroup<WallTime>,
+        rng: &mut R,
+        size: usize,
+        offset: usize,
+    ) {
+        let mut values = Self::generate_random_values(size, rng);
+        let twiddle = Self::random_fr(rng);
 
         group.bench_function("openzkp-radix-2-with-twiddles", |b| {
             b.iter(|| {
@@ -180,15 +192,26 @@ impl MatterBencher {
         size: usize,
         offset: usize,
     ) {
-        let mut values = Self::generate_random_values(size, rng);
+        let mut values: Vec<F> = Self::generate_random_values(size, rng);
         let twiddle: F = Self::generate_random_fr(rng);
-        let stride = 1; // simply assume 1;
 
         group.bench_function("matter-radix-2", |b| {
             b.iter(|| {
                 radix_2_butterfly(&mut values, offset, 1);
             })
         });
+    }
+
+    fn bench_fft_butterfly_with_twiddles<F: PrimeField, R: Rng>(
+        group: &mut BenchmarkGroup<WallTime>,
+        rng: &mut R,
+        size: usize,
+        offset: usize,
+    ) {
+        let mut values = Self::generate_random_values(size, rng);
+        let twiddle: F = Self::generate_random_fr(rng);
+        let stride = 1; // simply assume 1;
+
         group.bench_function("matter-radix-2-with-twiddles", |b| {
             b.iter(|| {
                 radix_2_butterfly_with_twiddle(&mut values, &twiddle, offset, stride);
@@ -210,25 +233,21 @@ impl MatterBencher {
             })
         });
 
-        group.bench_function(
-            format!("matter-with-chunks-2x2-dim-{}", dim),
-            |b| b.iter(|| transpose_square_with_chunks::<_, 2>(&mut matrix, dim)),
-        );
+        group.bench_function(format!("matter-with-chunks-2x2-dim-{}", dim), |b| {
+            b.iter(|| transpose_square_with_chunks::<_, 2>(&mut matrix, dim))
+        });
 
-        group.bench_function(
-            format!("matter-with-chunks-4x4-dim-{}", dim),
-            |b| b.iter(|| transpose_square_with_chunks::<_, 4>(&mut matrix, dim)),
-        );
+        group.bench_function(format!("matter-with-chunks-4x4-dim-{}", dim), |b| {
+            b.iter(|| transpose_square_with_chunks::<_, 4>(&mut matrix, dim))
+        });
 
-        group.bench_function(
-            format!("matter-with-tiles-2x2-dim-{}", dim),
-            |b| b.iter(|| transpose_square_with_square_tiles::<_, 2>(&mut matrix, dim)),
-        );
+        group.bench_function(format!("matter-with-tiles-2x2-dim-{}", dim), |b| {
+            b.iter(|| transpose_square_with_square_tiles::<_, 2>(&mut matrix, dim))
+        });
 
-        group.bench_function(
-            format!("matter-with-tiles-4x4-dim-{}", dim),
-            |b| b.iter(|| transpose_square_with_square_tiles::<_, 4>(&mut matrix, dim)),
-        );
+        group.bench_function(format!("matter-with-tiles-4x4-dim-{}", dim), |b| {
+            b.iter(|| transpose_square_with_square_tiles::<_, 4>(&mut matrix, dim))
+        });
     }
 
     fn bench_non_generic_radix_sqrt_fft<F: PrimeField, const LOOP_UNROLL: usize>(
@@ -236,8 +255,10 @@ impl MatterBencher {
         size: usize,
         worker: &Worker,
     ) {
+        let bit_len = F::CAPACITY;
+    
         let id_params = format!("size-{}", size);
-        let id_str = format!("matter-radix-sqrt-loop-unroll-{}", LOOP_UNROLL);
+        let id_str = format!("matter-radix-sqrt-Fr-{}-loop-unroll-{}", bit_len, LOOP_UNROLL);
         let id = BenchmarkId::new(&id_str, &id_params);
         let (omega, twiddles, mut values_m): (F, Vec<F>, Vec<F>) = Self::generate_values(size);
         group.bench_function(id, |b| {
@@ -278,12 +299,60 @@ fn bench_init(crit: &mut Criterion, group_id: String) -> (BenchmarkGroup<WallTim
     (group, rng)
 }
 
-fn compare_fr_multiplication(crit: &mut Criterion) {
-    let (mut group, mut rng) = bench_init(crit, "Fr Multiplication".to_string());
+fn compare_mac(crit: &mut Criterion) {
+    use ff::mac_with_carry;
+    use openzkp_primefield::u256::mac;
 
-    MatterBencher::bench_fr_mul::<Fr, _>(&mut group, &mut rng, "fr-default");
-    MatterBencher::bench_fr_mul::<FrNaive, _>(&mut group, &mut rng, "fr-naive");
+    let (mut group, mut rng) = bench_init(crit, "repr mac".to_string());
+
+    let x: u64 = rng.gen();
+    let y: u64 = rng.gen();
+    let mut carry = 0u64;
+
+    fn mac_new(a: u64, b: u64, c: u64, carry: u64) -> (u64, u64) {
+        let ret = (a as u128) + ((b as u128) * (c as u128)) + (carry as u128);
+
+        // #[allow(clippy::cast_possible_truncation)]
+        (ret as u64, (ret >> 64) as u64)
+    }
+
+    group.bench_function("openzkp mac", |b| {
+        b.iter(|| {
+            mac(0, x, y, carry);
+        })
+    });
+    group.bench_function("matter mac", |b| {
+        b.iter(|| {
+            mac_with_carry(0, x, y, &mut carry);
+        })
+    });
+    group.bench_function("matter mac_new", |b| {
+        b.iter(|| {
+            mac_new(0, x, y, carry);
+        })
+    });
+}
+
+fn compare_ef_fr_multiplication(crit: &mut Criterion) {
+    use hodor::optimized_fields::f125::Fr as FrAsm;
+    use hodor::optimized_fields::naive_f125::Fr as FrNaive;
+
+    let (mut group, mut rng) = bench_init(crit, "Fr Multiplication(EF)".to_string());
+
     MatterBencher::bench_fr_mul::<FrAsm, _>(&mut group, &mut rng, "fr-asm");
+    MatterBencher::bench_fr_mul::<FrNaive, _>(&mut group, &mut rng, "fr-naive");
+    // MatterBencher::bench_fr_mul::<FrAsmG, _>(&mut group, &mut rng, "fr-asm-generated");
+    OpenZkpBencher::bench_fr_mul(&mut group, &mut rng);
+
+    group.finish();
+}
+
+fn compare_proth_fr_multiplication(crit: &mut Criterion) {
+    let (mut group, mut rng) = bench_init(crit, "Fr Multiplication(Proth)".to_string());
+
+    MatterBencher::bench_fr_mul::<FrAsm, _>(&mut group, &mut rng, "fr-asm");
+    MatterBencher::bench_fr_mul::<FrNaive, _>(&mut group, &mut rng, "fr-naive");
+    // MatterBencher::bench_fr_mul::<FrAsmG, _>(&mut group, &mut rng, "fr-asm-generated");
     OpenZkpBencher::bench_fr_mul(&mut group, &mut rng);
 
     group.finish();
@@ -302,6 +371,23 @@ fn compare_fft_butterfly(crit: &mut Criterion) {
         offset.clone(),
     );
     OpenZkpBencher::bench_fft_butterfly(&mut group, &mut rng, size, offset);
+
+    group.finish();
+}
+
+fn compare_fft_butterfly_with_twiddles(crit: &mut Criterion) {
+    let (mut group, mut rng) = bench_init(crit, "FFT Butterfly with Twiddles".to_string());
+
+    let size = 16;
+    let offset: usize = rng.gen::<usize>() % size;
+
+    MatterBencher::bench_fft_butterfly_with_twiddles::<FrNaive, _>(
+        &mut group,
+        &mut rng,
+        size.clone(),
+        offset.clone(),
+    );
+    OpenZkpBencher::bench_fft_butterfly_with_twiddles(&mut group, &mut rng, size, offset);
 
     group.finish();
 }
@@ -328,13 +414,33 @@ fn compare_fft_by_unroll_params(crit: &mut Criterion, range: &std::ops::Range<us
     for (size, _log_size) in sizes.iter().cloned().zip(log_sizes) {
         group.throughput(criterion::Throughput::Elements(size as u64));
 
-        MatterBencher::bench_non_generic_radix_sqrt_fft::<Fr, 128>(&mut group, size, &worker);
+        MatterBencher::bench_non_generic_radix_sqrt_fft::<FrAsm, 128>(&mut group, size, &worker);
 
-        MatterBencher::bench_non_generic_radix_sqrt_fft::<Fr, 1024>(&mut group, size, &worker);
+        MatterBencher::bench_non_generic_radix_sqrt_fft::<FrAsm, 1024>(&mut group, size, &worker);
 
         OpenZkpBencher::bench_fft_radix_sqrt::<128>(&mut group, size);
 
         OpenZkpBencher::bench_fft_radix_sqrt::<1024>(&mut group, size);
+    }
+}
+
+fn compare_fft_by_fields_different_bits(crit: &mut Criterion, range: &std::ops::Range<usize>) {
+    let worker = Worker::new();
+    let (mut group, _) = bench_init(crit, "FFT".to_string());
+
+    let log_sizes: Vec<usize> = range.to_owned().step_by(2).collect();
+    let sizes: Vec<usize> = log_sizes.iter().map(|el| 1 << el).collect();
+
+    for (size, _log_size) in sizes.iter().cloned().zip(log_sizes) {
+        group.throughput(criterion::Throughput::Elements(size as u64));
+
+        MatterBencher::bench_non_generic_radix_sqrt_fft::<FrAsm, 128>(&mut group, size, &worker);
+
+        MatterBencher::bench_non_generic_radix_sqrt_fft::<Fr125Asm, 128>(&mut group, size, &worker);
+
+        // OpenZkpBencher::bench_fft_radix_sqrt::<128>(&mut group, size);
+
+        // OpenZkpBencher::bench_fft_radix_sqrt::<1024>(&mut group, size);
     }
 }
 
@@ -356,7 +462,7 @@ fn compare_fft_by_scalar_fields(crit: &mut Criterion, range: &std::ops::Range<us
             &mut group, size, &worker, "fr-asm",
         );
 
-        MatterBencher::bench_non_generic_radix_sqrt_fft_with_scalar_fields::<Fr, 128>(
+        MatterBencher::bench_non_generic_radix_sqrt_fft_with_scalar_fields::<FrAsm, 128>(
             &mut group,
             size,
             &worker,
@@ -368,11 +474,15 @@ fn compare_fft_by_scalar_fields(crit: &mut Criterion, range: &std::ops::Range<us
 }
 
 pub fn group(crit: &mut Criterion) {
-    compare_fr_multiplication(crit);
-    compare_fft_butterfly(crit);
-    let matrix_range = 16..24;
-    compare_matrix_transposition(crit, &matrix_range);
-    let fft_range = 16..24;
-    compare_fft_by_unroll_params(crit, &fft_range);
-    compare_fft_by_scalar_fields(crit, &fft_range);
+    // compare_mac(crit);
+    // compare_proth_fr_multiplication(crit);
+    // compare_ef_fr_multiplication(crit);
+    //     compare_fft_butterfly(crit);
+    //     compare_fft_butterfly_with_twiddles(crit);
+    //     let matrix_range = 16..24;
+    //     compare_matrix_transposition(crit, &matrix_range);
+    let fft_range = 8..24;
+    // compare_fft_by_unroll_params(crit, &fft_range);
+    compare_fft_by_fields_different_bits(crit, &fft_range);
+    //     compare_fft_by_scalar_fields(crit, &fft_range);
 }

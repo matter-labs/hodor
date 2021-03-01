@@ -141,7 +141,8 @@ impl<F: PrimeField> IntoARP<F> for CubicVDF<F> {
 
         // intermediate c0 = c0^2 + r*c1^2 
         let mut constraint_0 = Constraint::default();
-        constraint_0.density = ConstraintDensity::default();
+        // constraint_0.density = ConstraintDensity::default();
+        constraint_0.density = Box::from(DenseConstraint::default());
 
         constraint_0 -= c0_squared;
         constraint_0 -= c1_squared_by_r;
@@ -150,7 +151,8 @@ impl<F: PrimeField> IntoARP<F> for CubicVDF<F> {
         // same for intermediate c1
 
         let mut constraint_1 = Constraint::default();
-        constraint_1.density = ConstraintDensity::default();
+        // constraint_1.density = ConstraintDensity::default();
+        constraint_1.density = Box::from(DenseConstraint::default());
 
         constraint_1 -= two_c0_c1;
         constraint_1 += squaring_step_intermediate_c1;
@@ -170,7 +172,8 @@ impl<F: PrimeField> IntoARP<F> for CubicVDF<F> {
         };
 
         let mut constraint_2 = Constraint::default();
-        constraint_2.density = ConstraintDensity::default();
+        // constraint_2.density = ConstraintDensity::default();
+        constraint_2.density = Box::from(DenseConstraint::default());
 
         constraint_2 -= c0_by_intermediate;
         constraint_2 -= r_c1_by_intermediate;
@@ -191,7 +194,8 @@ impl<F: PrimeField> IntoARP<F> for CubicVDF<F> {
         };
 
         let mut constraint_3 = Constraint::default();
-        constraint_3.density = ConstraintDensity::default();
+        // constraint_3.density = ConstraintDensity::default();
+        constraint_3.density = Box::from(DenseConstraint::default());
 
         constraint_3 -= c0_by_intermediate_c1;
         constraint_3 -= c1_by_intermediate_c0;
@@ -368,7 +372,8 @@ fn test_cubic_vdf_high_level_prover() {
     let vdf_instance = CubicVDF::<Fr> {
         start_c0: Fr::one(),
         start_c1: Fr::one(),
-        num_operations: (1 << 20) - 1
+        // num_operations: (1 << 20) - 1
+        num_operations: (1 << 8) - 1
     };
 
     let start = Instant::now();

@@ -216,19 +216,49 @@ impl<F: PrimeField> IntoAIR<F> for Fibonacci<F> {
             power: 1
         };
 
+        /*
+            |   T   |   A   |   B   |   C   |
+            |   0   |   0   |   1   |   1   |
+            |   1   |   1   |   2   |   3   |
+            |   2   |   2   |   3   |   5   |
+            |   3   |   3   |   5   |   8   |
+            
+            We need to constraints for Transition Function
+
+            1. constraint 0:
+            b_{i} = a{i+1} 
+            b_{i} - a{i+1}  = 0
+
+            2. constraint 1:
+            a_{i} + b_{i} = b_{i+1}
+            a_{i} + b_{i} - b_{i+1} = 0
+        */
+
         // constraint for registed a_new = b;
         fib_constraint_0 -= b_register_now.clone(); 
         fib_constraint_0 += a_next_step;
         // b_new = a + b;
+        
+        // 
         fib_constraint_1 -= a_register_now; 
         fib_constraint_1 -= b_register_now; 
         fib_constraint_1 += b_next_step;
+
+        // witness deriveation function gives witness value from corresponding trace step
+        // tracer implicityl tracks current step.
 
         tracer.add_constraint_with_witness(fib_constraint_0, witness_derivation_function_0)?;
         tracer.add_constraint_with_witness(fib_constraint_1, witness_derivation_function_1)?;
 
 
         if self.final_b.is_some() {
+            /*
+                We also need three boundary constraints for initial and last values
+
+                1. boundary_constaint_0 => initial value for register A
+                2. boundary_constaint_1 => initial value for register B
+                3. boundary_constaint_2 => last value for register B
+            */
             let final_b = self.final_b.unwrap();
             let at_step = self.at_step.unwrap();
 

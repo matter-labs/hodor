@@ -56,7 +56,7 @@ impl<F: PrimeField> IopTree<F> for Blake2sIopTree<F> {
         }
         assert!(!ldes.is_empty());
 
-        let num_ldes = ldes.len() / stride;
+        let number_of_ldes = ldes.len() / stride;
 
         let num_leafs = stride;
 
@@ -79,7 +79,7 @@ impl<F: PrimeField> IopTree<F> for Blake2sIopTree<F> {
         
         let mut leaf_hashes = vec![[0u8; 32]; num_leafs];
         
-        let splitted_ldes_as_ref: &[&[F]] = splitted_ldes.as_ref();
+        // let splitted_ldes_as_ref: &[&[F]] = splitted_ldes.as_ref();
 
         {
             worker.scope(num_leafs, |scope, chunk| {
@@ -90,10 +90,12 @@ impl<F: PrimeField> IopTree<F> for Blake2sIopTree<F> {
                         for (j, lh) in lh.iter_mut().enumerate() {
                             let idx = base_idx + j;
                             // collect each corresponding leafs
-                            let mut values = vec![F::zero(); num_ldes];
-                            for (lde_idx, lde) in splitted_ldes_as_ref.iter().enumerate(){
-                                let value = <Self::Combiner as CosetCombiner<F> >::get_for_tree_index(&lde, idx);
-                                values[lde_idx] = value.clone();
+                            let mut values = vec![F::zero(); number_of_ldes];
+                            for lde_idx in 0..number_of_ldes{
+                                let offset = lde_idx*stride + idx;
+                                // TODO can we safely use single vector for all ldes here?
+                                let value = <Self::Combiner as CosetCombiner<F> >::get_for_tree_index(&ldes, offset);
+                                values[lde_idx] = *value;
                             }
 
                             *lh = <Self::Hasher as TreeHasher<F>>::hash_leaf(&values);                            
@@ -220,14 +222,10 @@ impl<F: PrimeField> IopTree<F> for Blake2sIopTree<F> {
 
         let mut pair_values = vec![F::zero(); number_of_ldes];
 
-        let ldes_splitted: Vec<&[F]> = ldes.chunks(stride).collect();
-        for (idx, lde) in ldes_splitted.iter().enumerate(){
-            pair_values[idx]   = lde[pair_natural_index];
+        for idx in 0..number_of_ldes{
+            let offset = idx*stride + pair_natural_index;
+            pair_values[idx] = ldes[offset];
         }
-
-        // TODO 
-        // for idx in 0..number_of_ldes
-        //      pair_values[idx] = lde[idx*stride+pair_natural_index]
 
         let encoded_pair_hash = <Self::Hasher as TreeHasher<F>>::hash_leaf(&pair_values);
         path.push(encoded_pair_hash);

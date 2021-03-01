@@ -49,7 +49,6 @@ impl<F: PrimeField> ALIInstance<F, PerRegisterARP> {
         let column_domain = Domain::<F>::new_for_size(arp.properties.num_rows as u64)?;
         let constraints_domain = Domain::<F>::new_for_size(column_domain.size * max_constraint_power)?;
         let precomputed_omegas = PrecomputedOmegas::new_for_domain(&constraints_domain, &worker);
-
         let mut all_masks: IndexSet::<MaskProperties<F>> = IndexSet::new();
 
         for c in arp.properties.constraints.iter() {
@@ -416,7 +415,7 @@ impl<F: PrimeField> ALIInstance<F, PerRegisterARP> {
 
         let mut evaluated_terms_map: IndexMap::<WitnessEvaluationData<F>, Polynomial<F, Values>> = IndexMap::new();
 
-        // now evaluate normal constraints
+        // now evaluate TF constraints
         for (density, batch) in self.constraints_batched_by_density.iter() {
             let mut batch_values = g_values.clone();
             for c in batch.iter()   {

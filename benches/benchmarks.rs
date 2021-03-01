@@ -5,6 +5,7 @@ mod transposition;
 mod arith;
 mod fft;
 mod comparisons;
+mod prover;
 
 fn main() {
     let crit = &mut Criterion::default().configure_from_args();
@@ -13,5 +14,6 @@ fn main() {
     comparisons::group(crit);
     // prime_field::group(crit);
     // fft::group(crit);
+    // prover::group(crit);
     crit.final_summary();
 }

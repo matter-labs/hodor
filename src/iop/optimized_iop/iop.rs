@@ -80,6 +80,7 @@ impl<F: PrimeField> IOP<F> for TrivialBlake2sIOP<F> {
         assert!(natural_index < self.tree.size() as usize);
         
         let length_of_single_lde = stride;        
+        let number_of_ldes = ldes.len() / length_of_single_lde;
         assert!(natural_index < length_of_single_lde);
 
         let tree_index =
@@ -87,13 +88,10 @@ impl<F: PrimeField> IOP<F> for TrivialBlake2sIOP<F> {
         
         let path = self.tree.get_path(tree_index, ldes, stride);
         
-        let number_of_ldes = ldes.len() / length_of_single_lde;
         let mut values = vec![F::zero(); number_of_ldes];
-        let ldes_splitted: Vec<&[F]> = ldes.chunks(length_of_single_lde).collect();
-
-        for (idx, lde) in ldes_splitted.iter().enumerate() {
-            let value = lde[natural_index];
-            values[idx] = value;
+        for idx in 0..number_of_ldes{
+            let offset = idx*stride + natural_index;
+            values[idx] = ldes[offset];
         }
 
         TrivialBlake2sIopQuery::<F> {

@@ -240,7 +240,15 @@ pub(crate) fn sub_with_reduction_impl(a: [u64; 2], b: [u64; 2]) -> [u64; 2] {
 // #[cfg(all(target_arch = "x86_64", target_feature = "adx"))]
 pub(crate) fn reduce_by_modulus_impl(a: [u64; 2]) -> [u64; 2] {
     let [mut r0, mut r1] = a;
-
+    // modulus : higher-limb: 0x3000000300000001  lower-limb: 1
+    // reduce number when it is greater than modulus
+    // in order to check this test
+    // we substract 1 from lower limb.
+    // if it borrows(CF) then it means number is higher than modulus
+    // we substract higer limb of modulus from higher limb of number
+    // if it generates and CF then it means number is higher than modulus
+    // and reduction will happen
+    // same for lower limb.
     unsafe {
         asm!(
             "mov {t0}, {in_out_0}",
