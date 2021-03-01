@@ -471,3 +471,81 @@ fn test_optimized_cubic_vdf_high_level_prover() {
 
     assert!(valid);
 }
+
+#[test]
+fn test_optimized_cubic_vdf_high_level_prover_with_ntt() {
+    use std::time::Instant;
+    // use crate::iop::blake2s_trivial_iop::TrivialBlake2sIOP;
+    // use crate::fri::*;
+    use super::fri::*;
+    use super::iop::TrivialBlake2sIOP;
+    use super::prover::Prover;
+    use super::verifier::Verifier;
+    use crate::ali::per_register::*;
+    use crate::transcript::*;
+    use crate::experiments::Fr;
+    use crate::fft::cooley_tukey_ntt::*;
+
+
+    let vdf_instance = CubicVDF::<Fr> {
+        start_c0: Fr::one(),
+        start_c1: Fr::one(),
+        // num_operations: (1 << 20) - 1
+        num_operations: (1 << 8) - 1,
+    };
+
+    let start = Instant::now();
+    let (witness, props) = vdf_instance.into_arp();
+    println!(
+        "Done preraping and calculating VFD in {} ms",
+        start.elapsed().as_millis()
+    );
+
+    let witness = witness.expect("some witness");
+
+    let lde_factor = 16;
+    let output_at_degree_plus_one = 1;
+
+    let size = witness.clone()[0].len();
+    println!("witness size {}", size);
+    let bitreversed_omegas = BitReversedOmegas::<Fr>::new_for_domain_size(size.next_power_of_two());
+
+    let start = Instant::now();
+    let prover = Prover::<
+        Fr,
+        Blake2sTranscript<Fr>,
+        TrivialBlake2sIOP<Fr>,
+        FRIProofPrototype<Fr, TrivialBlake2sIOP<Fr>>,
+        FRIProof<Fr, TrivialBlake2sIOP<Fr>>,
+        NaiveFriIop<Fr, TrivialBlake2sIOP<Fr>>,
+        PerRegisterARP,
+    >::new(props.clone(), lde_factor, output_at_degree_plus_one)
+    .expect("must work");
+    println!(
+        "Prover initialization in {} ms",
+        start.elapsed().as_millis()
+    );
+
+    let start = Instant::now();
+    // let proof = prover.prove(witness).expect("must work");
+    let proof = prover.prove_with_ntt(witness, &bitreversed_omegas).expect("must work");
+    println!("Prove generation in {} ms", start.elapsed().as_millis());
+
+    let start = Instant::now();
+    let verifier = Verifier::<
+        Fr,
+        Blake2sTranscript<Fr>,
+        TrivialBlake2sIOP<Fr>,
+        FRIProofPrototype<Fr, TrivialBlake2sIOP<Fr>>,
+        FRIProof<Fr, TrivialBlake2sIOP<Fr>>,
+        NaiveFriIop<Fr, TrivialBlake2sIOP<Fr>>,
+        PerRegisterARP,
+    >::new(props, lde_factor)
+    .expect("some verifier");
+    println!("Prove verification in {} ms", start.elapsed().as_millis());
+
+    println!("Verifier starts");
+    let valid = verifier.verify(&proof).expect("must work");
+
+    assert!(valid);
+}

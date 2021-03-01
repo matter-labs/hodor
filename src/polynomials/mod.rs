@@ -1172,7 +1172,8 @@ impl<F: PrimeField> Polynomial<F, Coefficients> {
                             &worker,
                             &this_domain_omega,
                             log_n,
-                            num_cpus_hint,
+                            // num_cpus_hint,
+                            None,
                         );
                         coset_generator.mul_assign(&coset_omega);
                     }

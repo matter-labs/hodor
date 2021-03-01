@@ -43,6 +43,7 @@ impl<'a, F: PrimeField, I: IOP<F>> NaiveFriIop<F, I> {
         assert!(lde_factor.is_power_of_two());
 
         let initial_degree_plus_one = initial_domain_size / lde_factor;
+        // println!("initial domain size {} lde factor {} initial degree plus one {}", initial_domain_size, lde_factor, initial_degree_plus_one);
         let num_steps = log2_floor(initial_degree_plus_one / output_coeffs_at_degree_plus_one) as usize;
 
         let mut intermediate_commitments = vec![];

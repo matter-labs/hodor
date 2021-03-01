@@ -12,6 +12,7 @@ use hodor::iop::optimized_iop::prover::Prover;
 use hodor::transcript::Blake2sTranscript;
 
 use hodor::experiments::cubic_vdf::CubicVDF as OldCubicVdf;
+use hodor::fft::cooley_tukey_ntt::*;
 use hodor::fri::{
     FRIProof as OldFRIProof, FRIProofPrototype as OldFRIProofPrototype, FriProof as OldFriProof,
     FriProofPrototype as OldFriProofPrototype, NaiveFriIop as OldNaiveFriIop,
@@ -108,7 +109,7 @@ pub fn group(crit: &mut Criterion) {
     let new_config = PlotConfiguration::default().summary_scale(AxisScale::Logarithmic);
     group.plot_config(new_config);
 
-    let num_operations = (8..16).map(|e| (1 << e) - 1);
+    let num_operations = (8..14).map(|e| (1 << e) - 1);
 
     for num_operation in num_operations {
         let (old_witness_polys, old_prover_instance) =
@@ -121,10 +122,14 @@ pub fn group(crit: &mut Criterion) {
 
         let (optimized_witness_polys, optimized_prover_instance) =
             init_optimized_prover::<Fr>(num_operation, lde_factor, output_at_degree_plus_one);
+        let size = optimized_witness_polys[0].len();
+        println!("witness size {}", size);
+        let bitreversed_omegas =
+            BitReversedOmegas::<Fr>::new_for_domain_size(size.next_power_of_two());
 
         let bench_id = BenchmarkId::new("optimized-prover", num_operation);
         group.bench_with_input(bench_id, &optimized_witness_polys, |b, input| {
-            b.iter(|| optimized_prover_instance.prove(input.to_vec()))
+            b.iter(|| optimized_prover_instance.prove_with_ntt(input.to_vec(), &bitreversed_omegas))
         });
     }
 }
