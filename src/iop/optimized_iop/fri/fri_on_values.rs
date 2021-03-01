@@ -14,7 +14,7 @@ impl<'a, F: PrimeField, I: IOP<F>> NaiveFriIop<F, I> {
         output_coeffs_at_degree_plus_one: usize,
         worker: &Worker
     ) -> Result<FRIProofPrototype<F, I>, SynthesisError> {
-        let l0_commitment: I = I::create(lde_values.as_ref(), 1); // TODO
+        let l0_commitment: I = I::create(lde_values.as_ref(), lde_values.as_ref().len()); // TODO
         let initial_domain_size = lde_values.size();
         let precomputation_size = initial_domain_size/2;
         let mut two = F::one();
@@ -75,7 +75,7 @@ impl<'a, F: PrimeField, I: IOP<F>> NaiveFriIop<F, I> {
                             let idx = initial_k + j;
                             debug_assert!(idx < next_domain_size);
                             let omega_idx = idx * stride;
-                            let f_at_omega = values_slice[idx];
+                            let f_at_omega = values_slice[idx];                            
                             let f_at_minus_omega = values_slice[idx + next_domain_size];
 
                             let mut v_even_coeffs = f_at_omega;
@@ -103,7 +103,7 @@ impl<'a, F: PrimeField, I: IOP<F>> NaiveFriIop<F, I> {
                 }
             });
 
-            let intermediate_iop = I::create(next_values.as_ref(), 1);
+            let intermediate_iop = I::create(next_values.as_ref(), next_values.len());
             let root = intermediate_iop.get_root();
             roots.push(root);
             next_domain_challenge = intermediate_iop.get_challenge_scalar_from_root();
@@ -117,6 +117,7 @@ impl<'a, F: PrimeField, I: IOP<F>> NaiveFriIop<F, I> {
 
             values_slice = intermediate_values.last().expect("is something").as_ref();
         }
+
 
         // final challenge is not necessary
         challenges.pop().expect("will work");

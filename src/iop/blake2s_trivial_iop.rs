@@ -6,7 +6,7 @@ use super::*;
 use super::trivial_coset_combiner::*;
 
 lazy_static! {
-    static ref BASE_BLAKE2S_PARAMS: State = {
+    pub static ref BASE_BLAKE2S_PARAMS: State = {
         Params::new()
             .hash_length(32)
             .key(b"Squeamish Ossifrage")
@@ -92,7 +92,8 @@ impl<F: PrimeField> IopTreeHasher<F> for Blake2sTreeHasher<F> {
     }
 
     fn hash_node(values: &[Self::HashOutput], _level: usize) -> Self::HashOutput {
-        debug_assert!(values.len() == 2);
+        // TODO
+        // debug_assert!(values.len() == 2);
         let mut state = (*BASE_BLAKE2S_PARAMS).clone();
         for value in values.iter() {
             state.update(value);

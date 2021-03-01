@@ -10,7 +10,8 @@ use crate::arp::*;
 use crate::fft::multicore::Worker;
 // use crate::fri::*;
 use super::fri::*;
-use super::iop::IOP;
+use super::iop::{IOP};
+use super::query::IopQuery;
 use crate::transcript::Transcript;
 use crate::transcript::*;
 use super::verifier::*;
@@ -103,22 +104,19 @@ impl<
         let number_of_ldes = f_ldes.len();
         let length_of_single_lde = f_ldes[0].as_ref().len();
 
-        // we gonna combine values into leaf by a step number 2
-        // f_1[0] f_1[1] f_1[2] .. f_1[n]
-        // f_2[0] f_2[1] f_2[2] .. f_2[n]
-        // (f_1[0] || f_2[0]), (f_1[1] || f_2[1]), (f_1[2] || f_2[2]) .. (f_1[n] || f_2[n])
-        let mut combined_ldes = vec![];
+        let mut combined_lde = vec![];
         for lde in f_ldes.iter(){
-            combined_ldes.extend_from_slice(lde.as_ref());
+            combined_lde.extend_from_slice(lde.as_ref());
         }
 
-        assert_eq!(combined_ldes.len(), number_of_ldes*length_of_single_lde);
+        assert_eq!(combined_lde.len(), number_of_ldes*length_of_single_lde);
 
-        let single_oracle_from_multiple_lde = I::create(&combined_ldes, number_of_ldes);
-
-
+        let single_oracle_from_multiple_lde = I::create(&combined_lde, length_of_single_lde);
+        // let q = single_oracle_from_multiple_lde.query(2, &combined_lde, length_of_single_lde);
+        // assert_eq!(q.value().len(), number_of_ldes, "length of combined leaf does not match with number of ldes");
         let root_of_combined_tree = single_oracle_from_multiple_lde.get_root();
         transcript.commit_bytes(&root_of_combined_tree.as_ref());
+
 
         let g_poly_interpolant =
             self.ali
@@ -127,12 +125,15 @@ impl<
         let g_lde = g_poly_interpolant
             .clone()
             .lde(&self.worker, self.lde_factor)?;
+        
+        let g_oracle = I::create(g_lde.as_ref(), g_lde.as_ref().len());
 
-        let g_oracle = I::create(g_lde.as_ref(), 1);
         let g_iop_root = g_oracle.get_root();
         transcript.commit_bytes(g_iop_root.as_ref());
 
-        println!("Calculating DEEP part");
+        
+
+        // println!("Calculating DEEP part");
 
         let (h1_lde, h2_lde, f_at_z_m, _g_at_z) = self.ali.calculate_deep(
             &witness_polys,
@@ -145,7 +146,7 @@ impl<
 
         let fri_final_poly_degree = self.fri_final_degree_plus_one;
 
-        println!("Calculating FRI part");
+        // println!("Calculating FRI part");
 
         let h1_fri_proof_proto = FRI::proof_from_lde(
             &h1_lde,
@@ -153,6 +154,7 @@ impl<
             fri_final_poly_degree,
             &self.worker,
         )?;
+
         let h2_fri_proof_proto = FRI::proof_from_lde(
             &h2_lde,
             self.lde_factor,
@@ -179,23 +181,25 @@ impl<
                 &transcript.get_challenge_bytes(),
                 h1_lde.size(),
                 self.lde_factor,
-            );
+            );        
 
         let x_challenge_index_h2 =
             Verifier::<F, T, I, P, PR, FRI, PerRegisterARP>::bytes_to_challenge_index(
                 &transcript.get_challenge_bytes(),
                 h2_lde.size(),
                 self.lde_factor,
-            );
+            );            
 
         let h1_fri_proof =
             FRI::prototype_into_proof(h1_fri_proof_proto, &h1_lde, x_challenge_index_h1)?;
+
         let h2_fri_proof =
-            FRI::prototype_into_proof(h2_fri_proof_proto, &h2_lde, x_challenge_index_h2)?;
+        FRI::prototype_into_proof(h2_fri_proof_proto, &h2_lde, x_challenge_index_h2)?;
 
-        let combined_f_query = single_oracle_from_multiple_lde.query(x_challenge_index_h1, &combined_ldes, length_of_single_lde);
 
-        let g_query = g_oracle.query(x_challenge_index_h2, g_lde.as_ref(), 1);
+        let combined_f_query = single_oracle_from_multiple_lde.query(x_challenge_index_h1, &combined_lde, length_of_single_lde);
+
+        let g_query = g_oracle.query(x_challenge_index_h2, g_lde.as_ref(), g_lde.as_ref().len());
 
         let proof = InstanceProof::<F, T, I, P, PR, FRI, PerRegisterARP> {
             f_at_z_m: f_at_z_m,
@@ -222,7 +226,7 @@ impl<
 }
 
 #[test]
-fn test_fib_prover() {
+fn test_optimized_fib_prover() {
     use crate::air::Fibonacci;
     use crate::air::IntoAIR;
     use crate::air::TestTraceSystem;

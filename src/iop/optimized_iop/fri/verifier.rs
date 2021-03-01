@@ -212,7 +212,7 @@ impl<'a, F: PrimeField, I: IOP<F>> NaiveFriIop<F, I> {
             
             let iop_challenge = I::encode_root_into_challenge(root);
 
-            let f_at_omega = (&queries[0]).value()[0];
+            let f_at_omega = (&queries[0]).value()[0];            
             if let Some(value) = expected_value {
 
                 if !coset_values.contains(&domain_idx) {
@@ -249,7 +249,7 @@ impl<'a, F: PrimeField, I: IOP<F>> NaiveFriIop<F, I> {
             // to do assemble FRI step we just need to add them with a random challenge
 
             let mut tmp = v_odd_coeffs;
-            tmp.mul_assign(&iop_challenge);
+            tmp.mul_assign(&iop_challenge);            
             tmp.add_assign(&v_even_coeffs);
             tmp.mul_assign(&two_inv);
 
@@ -267,6 +267,7 @@ impl<'a, F: PrimeField, I: IOP<F>> NaiveFriIop<F, I> {
             omega_inv.square();
         }
 
+        println!("FRI oracles verified");
 
         // finally we need to get expected value from coefficients
 

@@ -29,7 +29,7 @@ impl<'a, F: PrimeField, I: IOP<F>> FRIProofPrototype<F, I> {
             }
 
             for idx in coset_values.into_iter() {
-                let query = iop.query(idx, leaf_values.as_ref(), 1); // TODO
+                let query = iop.query(idx, leaf_values.as_ref(), leaf_values.as_ref().len());
                 queries.push(query);
             }
 

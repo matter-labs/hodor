@@ -356,6 +356,8 @@ impl<F: PrimeField, T: Transcript<F>, I: IOP<F>, P: FriProofPrototype<F, I>, PR:
             return Ok(false);
         }
 
+        println!("combined f query verified");
+
         if proof.f_query.natural_index() != x_challenge_index_h1 {
             return Ok(false);
         }
@@ -410,12 +412,15 @@ impl<F: PrimeField, T: Transcript<F>, I: IOP<F>, P: FriProofPrototype<F, I>, PR:
         if !valid {
             return Ok(false);
         }
+        println!("h1 verified");
 
         let valid = FRI::verify_proof(
             &proof.fri_proof_h2,
             x_challenge_index_h2,
             h_2_at_x
         )?;
+
+        println!("h2 verified");
 
         Ok(valid)
     }

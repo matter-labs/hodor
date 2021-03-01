@@ -160,7 +160,7 @@ impl<'a, F: PrimeField, I: IOP<F>> NaiveFriIop<F, I> {
         output_coeffs_at_degree_plus_one: usize,
         worker: &Worker
     ) -> Result<FRIProofPrototype<F, I>, SynthesisError> {
-        let l0_commitment: I = I::create(lde_values.as_ref(), 1); 
+        let l0_commitment: I = I::create(lde_values.as_ref(), lde_values.as_ref().len()); 
         let initial_domain_size = lde_values.size();
 
         assert!(output_coeffs_at_degree_plus_one.is_power_of_two());
@@ -208,7 +208,7 @@ impl<'a, F: PrimeField, I: IOP<F>> NaiveFriIop<F, I> {
 
         let next_coeffs_as_poly = Polynomial::from_coeffs(next_coefficients.clone())?;
         let next_values_as_poly = next_coeffs_as_poly.lde(&worker, lde_factor)?;
-        let intermediate_iop = I::create(next_values_as_poly.as_ref(), 1);
+        let intermediate_iop = I::create(next_values_as_poly.as_ref(), next_values_as_poly.as_ref().len());
         let root = intermediate_iop.get_root();
         roots.push(root);
         next_domain_challenge = intermediate_iop.get_challenge_scalar_from_root();

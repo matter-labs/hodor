@@ -78,20 +78,21 @@ impl<F: PrimeField> IOP<F> for TrivialBlake2sIOP<F> {
 
     fn query(&self, natural_index: usize, ldes: &[F], stride: usize) -> Self::Query {
         assert!(natural_index < self.tree.size() as usize);
-        let leaf_len = ldes.len();
-
-        assert!(stride < leaf_len);
+        
+        let length_of_single_lde = stride;        
+        assert!(natural_index < length_of_single_lde);
 
         let tree_index =
             <Self::Combiner as CosetCombiner<F>>::natural_index_into_tree_index(natural_index);
-            let path = self.tree.get_path(tree_index, ldes, stride);
-            
-        let mut values = vec![F::zero(); ldes.len()];
-        let ldes_splitted: Vec<&[F]> = ldes.chunks(stride).collect();
+        
+        let path = self.tree.get_path(tree_index, ldes, stride);
+        
+        let number_of_ldes = ldes.len() / length_of_single_lde;
+        let mut values = vec![F::zero(); number_of_ldes];
+        let ldes_splitted: Vec<&[F]> = ldes.chunks(length_of_single_lde).collect();
 
         for (idx, lde) in ldes_splitted.iter().enumerate() {
             let value = lde[natural_index];
-
             values[idx] = value;
         }
 

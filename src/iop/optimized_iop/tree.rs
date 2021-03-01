@@ -58,7 +58,7 @@ impl<F: PrimeField> IopTree<F> for Blake2sIopTree<F> {
 
         let num_ldes = ldes.len() / stride;
 
-        let num_leafs = ldes.len();
+        let num_leafs = stride;
 
         let splitted_ldes : Vec<&[F]> = ldes.chunks_exact(stride).collect();
         for lde in splitted_ldes.iter() {
@@ -76,8 +76,9 @@ impl<F: PrimeField> IopTree<F> for Blake2sIopTree<F> {
 
         let worker = Worker::new();
 
+        
         let mut leaf_hashes = vec![[0u8; 32]; num_leafs];
-
+        
         let splitted_ldes_as_ref: &[&[F]] = splitted_ldes.as_ref();
 
         {
@@ -88,7 +89,6 @@ impl<F: PrimeField> IopTree<F> for Blake2sIopTree<F> {
                         let base_idx = i*chunk;
                         for (j, lh) in lh.iter_mut().enumerate() {
                             let idx = base_idx + j;
-
                             // collect each corresponding leafs
                             let mut values = vec![F::zero(); num_ldes];
                             for (lde_idx, lde) in splitted_ldes_as_ref.iter().enumerate(){
@@ -96,13 +96,13 @@ impl<F: PrimeField> IopTree<F> for Blake2sIopTree<F> {
                                 values[lde_idx] = value.clone();
                             }
 
-
                             *lh = <Self::Hasher as TreeHasher<F>>::hash_leaf(&values);                            
                         }
                     });
                 }
             });
         }
+
 
         // leafs are now encoded and hashed, so let's make a tree
 
@@ -129,6 +129,7 @@ impl<F: PrimeField> IopTree<F> for Blake2sIopTree<F> {
             });
         }
 
+
         for level in (0..(num_levels - 1)).rev() {
             // do the trick - split
             let (next_levels, inputs) = nodes_for_hashing.split_at_mut(nodes_for_hashing.len() / 2);
@@ -148,6 +149,7 @@ impl<F: PrimeField> IopTree<F> for Blake2sIopTree<F> {
 
             nodes_for_hashing = next_levels;
         }
+
 
         Self {
             size: size,
@@ -191,11 +193,12 @@ impl<F: PrimeField> IopTree<F> for Blake2sIopTree<F> {
                 hash = <Self::Hasher as TreeHasher<F>>::hash_node(&[el.clone(), hash], 0);
             }
             idx >>= 1;
-        }
-
+        }        
         &hash == root
     }
 
+    // this function accepts tree index instead of natural index
+    // thats why we need leaf values here
     fn get_path(
         &self,
         tree_index: usize,
@@ -213,12 +216,18 @@ impl<F: PrimeField> IopTree<F> for Blake2sIopTree<F> {
         let pair_natural_index =
             <Self::Combiner as CosetCombiner<F>>::tree_index_into_natural_index(tree_pair_index);        
 
-        let mut pair_values = vec![F::zero(); ldes.len()];
+        let number_of_ldes = ldes.len() / stride;
+
+        let mut pair_values = vec![F::zero(); number_of_ldes];
 
         let ldes_splitted: Vec<&[F]> = ldes.chunks(stride).collect();
         for (idx, lde) in ldes_splitted.iter().enumerate(){
             pair_values[idx]   = lde[pair_natural_index];
         }
+
+        // TODO 
+        // for idx in 0..number_of_ldes
+        //      pair_values[idx] = lde[idx*stride+pair_natural_index]
 
         let encoded_pair_hash = <Self::Hasher as TreeHasher<F>>::hash_leaf(&pair_values);
         path.push(encoded_pair_hash);

@@ -33,6 +33,7 @@ impl<F: PrimeField> TreeHasher<F> for Blake2sTreeHasher<F> {
     type InnerIopTreeHasher = InnerBlake2sTreeHasher<F>;
 
     fn hash_leaf(values: &[F]) -> <Self::InnerIopTreeHasher as InnerIopTreeHasher<F>>::HashOutput {
+ 
         let mut buf = vec![[0u8; 32]; values.len()];
         for (idx, value) in values.iter().enumerate() {
             let encoded_value = <<Self::InnerIopTreeHasher as InnerIopTreeHasher<F>>::LeafEncoder as LeafEncoder<
@@ -40,7 +41,6 @@ impl<F: PrimeField> TreeHasher<F> for Blake2sTreeHasher<F> {
             >>::encode_leaf(value);
             buf[idx].copy_from_slice(&encoded_value);
         }
-
         <Self::InnerIopTreeHasher as InnerIopTreeHasher<F>>::hash_node(&buf, 0)
     }
 
