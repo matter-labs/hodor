@@ -663,6 +663,89 @@ impl<F: PrimeField> Polynomial<F, Coefficients> {
 
         Polynomial::from_values(final_values)
     }
+    pub fn lde_using_square_root_fft(
+        self,
+        worker: &Worker,
+        factor: usize,
+        precomputed_twiddle_factors: &Vec<F>,
+    ) -> Result<Polynomial<F, Values>, SynthesisError> {
+        debug_assert!(self.coeffs.len().is_power_of_two());
+
+        if factor == 1 {
+            return Ok(self.fft(&worker));
+        }
+
+        let num_cpus = worker.cpus;
+        let num_cpus_hint = if num_cpus <= factor {
+            Some(1)
+        } else {
+            let threads_per_coset = factor / num_cpus;
+            // TODO: it's not immediately clean if having more threads than (virtual) cores benefits
+            // over underutilization of some (virtual) cores
+            // let mut threads_per_coset = factor / num_cpus;
+            // if factor % num_cpus != 0 {
+            //     if (threads_per_coset + 1).is_power_of_two() {
+            //         threads_per_coset += 1;
+            //     }
+            // }
+            Some(threads_per_coset)
+        };
+
+        assert!(factor.is_power_of_two());
+        let new_size = self.coeffs.len() * factor;
+        let domain = Domain::<F>::new_for_size(new_size as u64)?;
+
+        let mut results = vec![self.coeffs; factor];
+
+        let coset_omega = domain.generator;
+        let this_domain_omega = self.omega;
+
+        let log_n = self.exp;
+
+        worker.scope(results.len(), |scope, chunk| {
+            for (i, r) in results.chunks_mut(chunk).enumerate() {
+                scope.spawn(move |_| {
+                    let mut coset_generator = coset_omega.pow(&[i as u64]);
+                    for r in r.iter_mut() {
+                        if coset_generator != F::one() {
+                            distribute_powers_serial(&mut r[..], coset_generator);
+                            // distribute_powers(&mut r[..], &worker, coset_generator);
+                        }
+                        // best_fft(
+                        //     &mut r[..],
+                        //     &worker,
+                        //     &this_domain_omega,
+                        //     log_n,
+                        //     None,
+                        // );
+                        crate::fft::strided_fft::non_generic::non_generic_radix_sqrt::<_, 128>(&mut r[..], &this_domain_omega, precomputed_twiddle_factors, &worker);
+                        coset_generator.mul_assign(&coset_omega);
+                    }
+                });
+            }
+        });
+
+        let mut final_values = vec![F::zero(); new_size];
+
+        let results_ref = &results;
+
+        worker.scope(final_values.len(), |scope, chunk| {
+            for (i, v) in final_values.chunks_mut(chunk).enumerate() {
+                scope.spawn(move |_| {
+                    let mut idx = i * chunk;
+                    for v in v.iter_mut() {
+                        let coset_idx = idx % factor;
+                        let element_idx = idx / factor;
+                        *v = results_ref[coset_idx][element_idx];
+
+                        idx += 1;
+                    }
+                });
+            }
+        });
+
+        Polynomial::from_values(final_values)
+    }
 
     // pub fn lde_using_multiple_cosets_with_precomputation<P: FftPrecomputations<F>>(
     //     self,
@@ -1486,6 +1569,38 @@ impl<F: PrimeField> Polynomial<F, Values> {
         }
     }
 
+    pub fn ifft_with_square_root_fft(
+        mut self, 
+        worker: &Worker, 
+        precomputed_twiddle_factors: &Vec<F>
+    ) -> Polynomial<F, Coefficients> {
+        debug_assert!(self.coeffs.len().is_power_of_two());
+        // best_fft(&mut self.coeffs, worker, &self.omegainv, self.exp, None);
+        crate::fft::strided_fft::non_generic::non_generic_radix_sqrt::<_, 128>(&mut self.coeffs, &self.omegainv, precomputed_twiddle_factors, &worker);
+
+        worker.scope(self.coeffs.len(), |scope, chunk| {
+            let minv = self.minv;
+
+            for v in self.coeffs.chunks_mut(chunk) {
+                scope.spawn(move |_| {
+                    for v in v {
+                        v.mul_assign(&minv);
+                    }
+                });
+            }
+        });
+
+        Polynomial::<F, Coefficients> {
+            coeffs: self.coeffs,
+            exp: self.exp,
+            omega: self.omega,
+            omegainv: self.omegainv,
+            geninv: self.geninv,
+            minv: self.minv,
+            _marker: std::marker::PhantomData,
+        }
+    }
+
     pub fn icoset_fft(self, worker: &Worker) -> Polynomial<F, Coefficients> {
         debug_assert!(self.coeffs.len().is_power_of_two());
         let geninv = self.geninv;
@@ -1503,6 +1618,20 @@ impl<F: PrimeField> Polynomial<F, Values> {
         debug_assert!(self.coeffs.len().is_power_of_two());
         let geninv = coset_generator.inverse().expect("must exist");
         let mut res = self.ifft(worker);
+        res.distribute_powers(worker, geninv);
+
+        res
+    }
+
+    pub fn icoset_fft_for_generator_with_square_root_fft(
+        self,
+        worker: &Worker,
+        coset_generator: &F,
+        precomputed_twiddle_factors: &Vec<F>
+    ) -> Polynomial<F, Coefficients> {
+        debug_assert!(self.coeffs.len().is_power_of_two());
+        let geninv = coset_generator.inverse().expect("must exist");
+        let mut res = self.ifft_with_square_root_fft(worker, precomputed_twiddle_factors);
         res.distribute_powers(worker, geninv);
 
         res
@@ -2666,58 +2795,36 @@ mod test {
         assert_eq!(expected.as_ref(), actual.as_ref());
     }
 
-    // #[test]
-    // fn test_multiplication_comparison_between_ntt_and_naive_ifft() {        
-    //     let size: usize = 1 << 4;
+    #[test]
+    fn test_comparison_between_lde_and_fft() {        
+        let size: usize = 1 << 4;
 
-    //     println!("size {} next power of two {}", size, size.next_power_of_two());
+        println!("size {} next power of two {}", size, size.next_power_of_two());
 
-    //     let lde_factor = 2;
+        let lde_factor = 2;
 
-    //     let size_with_lde = size * lde_factor;
+        let worker = Worker::new();
 
-    //     let worker = Worker::new();
+        let coeffs = make_random_field_elements::<Fr>(&worker, size);
 
-    //     let omegas_bitreversed =
-    //         BitReversedOmegas::<Fr>::new_for_domain_size(size.next_power_of_two());
+        let poly = Polynomial::from_coeffs(coeffs).unwrap();
 
-    //     let omegas_inv_bitreversed = <OmegasInvBitreversed::<Fr> as CTPrecomputations::<Fr>>::new_for_domain_size(size.next_power_of_two());
+        // we should evalute polynomial in a domain size 2n
+        // so compute omega of new domain
+        let new_domain_size = size*lde_factor;
+        let new_domain = Domain::new_for_size(new_domain_size as u64).expect("new domain");
+        let new_domain_generator = new_domain.generator;
+        // eval polynomial at [w^0, w^1, .. w^n]
+        let mut actual_evals = vec![Fr::zero(); new_domain_size];
+        let mut tmp = Fr::one();
+        for value in actual_evals.iter_mut(){
+            *value = poly.evaluate_at(&worker, tmp);
+            tmp.mul_assign(&new_domain_generator);
+        }
+        let actual_values = Polynomial::from_values(actual_evals).expect("some evals");
 
-    //     let coeffs = crate::kate_commitment::test::make_random_field_elements::<Fr>(&worker, size);
+        let expected_values = poly.clone().lde(&worker, lde_factor).expect("some lde");
 
-    //     let poly = Polynomial::from_coeffs(coeffs).unwrap();
-
-    //     let original_evals = poly.clone().lde(&worker, lde_factor).expect("some lde");
-
-    //     let mut expected_evals = original_evals.clone();
-    //     expected_evals.mul_assign(&worker, &original_evals);
-
-    //     let expected = expected_evals.ifft(&worker);
-        
-    //     let coset_factor = &Fr::multiplicative_generator();
-    //     // let coset_factor = &Fr::one();
-
-    //     // outputs in bitreverse enumeration so we need to change permutation
-    //     let ntt_evals = poly
-    //         .clone()
-    //         .bitreversed_lde_using_bitreversed_ntt(
-    //             &worker,
-    //             lde_factor,
-    //             &omegas_bitreversed,
-    //             &coset_factor,
-    //         )
-    //         .expect("some lde");
-
-    //     let mut actual_evals = ntt_evals.clone();
-    //     actual_evals.mul_assign(&worker, &ntt_evals);
-
-    //     actual_evals.bitreverse_enumeration(&worker);
-    //     let mut actual = actual_evals.ifft_using_bitreversed_ntt(
-    //         &worker,
-    //         &omegas_inv_bitreversed,
-    //         &coset_factor,
-    //     ).expect("some poly");
-
-    //     assert_eq!(expected.as_ref(), actual.as_ref());
-    // }
+        assert_eq!(expected_values.as_ref(), actual_values.as_ref());
+    }
 }

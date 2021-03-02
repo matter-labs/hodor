@@ -4,10 +4,10 @@ use criterion::{
     measurement::{Measurement, WallTime},
     AxisScale, Bencher, BenchmarkGroup, BenchmarkId, Criterion, PlotConfiguration, Throughput,
 };
-use hodor::optimized_fields::f125::Fr as Fr125Asm;
 use hodor::optimized_fields::f252::Fr as FrAsm;
 use hodor::optimized_fields::f252_asm_generated::Fr as FrAsmG;
 use hodor::optimized_fields::naive_f125 as Fr125Naive;
+use hodor::{fft::fft::best_fft, optimized_fields::f125::Fr as Fr125Asm};
 
 use hodor::{
     domains::Domain,
@@ -256,9 +256,12 @@ impl MatterBencher {
         worker: &Worker,
     ) {
         let bit_len = F::CAPACITY;
-    
+
         let id_params = format!("size-{}", size);
-        let id_str = format!("matter-radix-sqrt-Fr-{}-loop-unroll-{}", bit_len, LOOP_UNROLL);
+        let id_str = format!(
+            "matter-radix-sqrt-Fr-{}-loop-unroll-{}",
+            bit_len, LOOP_UNROLL
+        );
         let id = BenchmarkId::new(&id_str, &id_params);
         let (omega, twiddles, mut values_m): (F, Vec<F>, Vec<F>) = Self::generate_values(size);
         group.bench_function(id, |b| {
@@ -437,10 +440,6 @@ fn compare_fft_by_fields_different_bits(crit: &mut Criterion, range: &std::ops::
         MatterBencher::bench_non_generic_radix_sqrt_fft::<FrAsm, 128>(&mut group, size, &worker);
 
         MatterBencher::bench_non_generic_radix_sqrt_fft::<Fr125Asm, 128>(&mut group, size, &worker);
-
-        // OpenZkpBencher::bench_fft_radix_sqrt::<128>(&mut group, size);
-
-        // OpenZkpBencher::bench_fft_radix_sqrt::<1024>(&mut group, size);
     }
 }
 
@@ -473,6 +472,43 @@ fn compare_fft_by_scalar_fields(crit: &mut Criterion, range: &std::ops::Range<us
     }
 }
 
+fn compare_square_root_fft_with_best_fft(crit: &mut Criterion, range: std::ops::Range<usize>) {
+    let worker = Worker::new();
+    let mut group = crit.benchmark_group("FFT comparison");
+    let new_config = PlotConfiguration::default().summary_scale(AxisScale::Logarithmic);
+    group.plot_config(new_config);
+
+    let field_bit_size = FrAsm::CAPACITY;
+    println!("running for field {}", field_bit_size);
+
+    for log_size in range {
+        let size = 1 << log_size;
+
+        const LOOP_UNROLL: usize = 128;
+
+        let id_params = format!("size-{}", size);
+        let id = BenchmarkId::new("radix-sqrt-field-unroll-128", &id_params);
+        let (omega, twiddles, mut values): (FrAsm, Vec<FrAsm>, Vec<FrAsm>) =
+            MatterBencher::generate_values(size);
+        println!("size of elements {}", size);
+
+        let mut values_for_square_root = values.clone();
+        group.bench_function(id, |b| {
+            b.iter(|| {
+                non_generic_radix_sqrt::<_, LOOP_UNROLL>(&mut values_for_square_root, &omega, &twiddles, &worker)
+            });
+        });
+
+        let id_params = format!("size-{}", size);
+        let id = BenchmarkId::new("best-fft", &id_params);
+        group.bench_function(id, |b| {
+            b.iter(|| {
+                best_fft(&mut values, &worker, &omega, log_size as u32, None);
+            });
+        });
+    }
+}
+
 pub fn group(crit: &mut Criterion) {
     // compare_mac(crit);
     // compare_proth_fr_multiplication(crit);
@@ -481,8 +517,9 @@ pub fn group(crit: &mut Criterion) {
     //     compare_fft_butterfly_with_twiddles(crit);
     //     let matrix_range = 16..24;
     //     compare_matrix_transposition(crit, &matrix_range);
-    let fft_range = 8..24;
+    let fft_range = 8..12;
     // compare_fft_by_unroll_params(crit, &fft_range);
-    compare_fft_by_fields_different_bits(crit, &fft_range);
+    // compare_fft_by_fields_different_bits(crit, &fft_range);
     //     compare_fft_by_scalar_fields(crit, &fft_range);
+    compare_square_root_fft_with_best_fft(crit, fft_range);
 }

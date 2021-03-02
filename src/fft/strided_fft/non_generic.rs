@@ -85,6 +85,7 @@ pub fn calcualate_inner_and_outer_sizes(size: usize) -> (usize, usize) {
     let inner_size = 1 << (log_n / 2);
     let outer_size = size / inner_size; 
 
+
     (inner_size, outer_size)
 }
 
@@ -183,16 +184,20 @@ pub fn non_generic_radix_sqrt<F: PrimeField, const MAX_LOOP_UNROLL: usize>(
 
 #[cfg(test)]
 mod test {
+
+    use crate::{ff::{Field, PrimeField}, fft::fft::best_fft};
+    use crate::experiments::fields::vdf_128_ef::Fr;
+    use crate::domains::Domain;
+    use crate::fft::multicore::Worker;
+    use std::time::Instant;
+    use super::{super::utils::precompute_twiddle_factors_parallelized, non_generic_radix_sqrt};
+    use rand::{XorShiftRng, SeedableRng, Rand};
+
     #[test]
     fn test_nongeneric_sqrt_fft_strategy() {
-        use crate::ff::{Field, PrimeField};
-        use crate::experiments::fields::vdf_128_ef::Fr;
-        use crate::domains::Domain;
-        use crate::fft::multicore::Worker;
-        use std::time::Instant;
-        use super::super::utils::precompute_twiddle_factors_parallelized;
+ 
 
-        use rand::{XorShiftRng, SeedableRng, Rand};
+        
         let rng = &mut XorShiftRng::from_seed([0x3dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
 
         const LOG_N: usize = 24;
@@ -246,5 +251,82 @@ mod test {
         println!("SQRT strategy fft taken {:?} for loop unroll = {}", start.elapsed(), UNROLL_3);
 
         assert_eq!(&input, &input_0);
+    }
+
+    #[test]
+    fn test_correctness_of_square_root_fft_comparison_against_best_fft(){
+        let worker = Worker::new();
+        let rng = &mut XorShiftRng::from_seed([0x3dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
+
+        let size: usize = 16; // 32*32
+
+        let log_size  = size.trailing_zeros();
+
+        // assert_eq!(log_size, 10);
+
+        let domain = Domain::new_for_size(size as u64).expect("a domain");
+
+        let omega = domain.generator;
+
+        let mut values: Vec<Fr> = std::iter::repeat(size).take(size).map(|_| Fr::rand(rng)).collect();
+
+        let mut values_for_sqrt = values.clone();
+
+        best_fft(&mut values, &worker, &omega, log_size, None);
+
+        // square root fft is based on a vector of NxN values
+        // so we should compute square root of size
+
+        let inner_size = 1<<(log_size / 2);
+
+        // we have a domain generator which w^(domain_size) = 1
+        // so 
+        // we need a inner_size root of unity  => w^(1<<inner_size) = 1
+        let inner_generator = omega.pow(&[inner_size as u64]);
+
+        assert_eq!(inner_generator.pow(&[inner_size as u64]), Fr::one());
+
+        // let precomputed_twiddle_factors = vec![];
+        let precomputed_twiddle_factors =  crate::fft::strided_fft::utils::precompute_twiddle_factors(&inner_generator, inner_size as usize);
+        non_generic_radix_sqrt::<_, 128>(&mut values_for_sqrt, &omega, &precomputed_twiddle_factors, &worker);
+
+        assert_eq!(values, values_for_sqrt);
+    }
+    
+    #[test]
+    fn test_roots_of_unity(){
+        let generator = Fr::root_of_unity();
+
+        let max_power = Fr::S;
+        // it means x^(2^max_power) = 1
+        println!("max power {}", max_power);
+        // let say we need x^4 = x^(2^2) = 1
+        // so we need to compute x^(max_power-2)
+        let power: u64 = 1<<(max_power - 2);
+
+        let powered_generator = generator.pow(&[power as u64]);
+
+        let actual = powered_generator.pow(&[(1<<2) as u64]);
+
+        assert_eq!(actual, Fr::one());
+    }
+
+    #[test]
+    fn test_inner_outer_size(){
+
+        let x: usize = 1024;
+
+        // we have 2^10 = 1024 values
+        // we want to compute square root size
+        // 1. compute log_n by using trailing zeroes
+        let log_n = x.trailing_zeros();
+        assert_eq!(1<<log_n, x);
+        // 2. compute half of log_n
+        let half_of_log_n = log_n/2;
+
+        // 3. compupte 2^(logn/2)
+        let result = 1<<half_of_log_n;
+
+        assert_eq!(result*result, x);
     }
 }
