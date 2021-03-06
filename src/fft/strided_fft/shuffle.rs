@@ -243,7 +243,7 @@ mod test {
     #[test]
     fn test_transpose_single() {
         use crate::optimized_fields::naive_f125::Fr;
-        const N: usize = 4;
+        const N: usize = 16;
 
         let size = N * 1;
 

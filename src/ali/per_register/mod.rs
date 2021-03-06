@@ -844,6 +844,303 @@ impl<F: PrimeField> ALIInstance<F, PerRegisterARP> {
 
         Ok(g_values)
     }
+    pub fn calculate_g_with_square_root_fft<T: Transcript<F>>(
+        &self,
+        transcript: &mut T,
+        witness: Vec<Polynomial<F, Coefficients>>,
+        worker: &Worker,
+        precomputed_twiddle_factors: &Vec<F>,
+    ) -> Result<Polynomial<F, Values>, SynthesisError> {
+        assert!(witness.len() == self.properties.num_registers);
+
+        // all zeroes
+        let mut g_values =
+            Polynomial::<F, Values>::new_for_size(self.constraints_domain.size as usize)?;
+
+        fn evaluate_for_mask<F: PrimeField>(
+            mut f: Polynomial<F, Coefficients>,
+            mask: StepDifference<F>,
+            worker: &Worker,
+        ) -> Polynomial<F, Coefficients> {
+            match mask {
+                StepDifference::Mask(m) => {
+                    f.distribute_powers(&worker, m);
+                }
+                _ => {
+                    unreachable!();
+                }
+            }
+
+            f
+        }
+
+        // first mask all the registers
+
+        let mut mask_applied_polynomials =
+            IndexMap::<MaskProperties<F>, Polynomial<F, Coefficients>, _>::new();
+
+        for m in self.all_masks.iter() {
+            let register_number = match m.register {
+                Register::Register(n) => n,
+                _ => {
+                    unreachable!();
+                }
+            };
+            let poly = (&witness[register_number]).clone();
+            let masked = evaluate_for_mask(poly, m.steps_difference, &worker);
+            mask_applied_polynomials.insert(m.clone(), masked);
+        }
+
+        fn calculate_adjustment_polynomial_in_coset<F: PrimeField>(
+            adjustment: u64,
+            alpha: F,
+            beta: F,
+            domain: &Domain<F>,
+            precomputations: &PrecomputedOmegas<F>,
+            worker: &Worker,
+        ) -> Polynomial<F, Values> {
+            assert!(adjustment >= 1);
+            assert!(precomputations.coset.len() as u64 == domain.size);
+            let mut poly = Polynomial::from_values(precomputations.coset.clone()).expect("is ok");
+            poly.pow(&worker, adjustment);
+            poly.scale(&worker, alpha);
+            poly.add_constant(&worker, &beta);
+
+            poly
+        }
+
+        // returns constraint evaluated in the coset
+        fn evaluate_constraint_term_into_values<F: PrimeField>(
+            term: &ConstraintTerm<F>,
+            substituted_witness: &IndexMap<MaskProperties<F>, Polynomial<F, Coefficients>>,
+            evaluated_univariate_terms: &mut IndexMap<
+                WitnessEvaluationData<F>,
+                Polynomial<F, Values>,
+            >,
+            power_hint: u64,
+            worker: &Worker,
+        ) -> Result<Polynomial<F, Values>, SynthesisError> {
+            assert!(power_hint.is_power_of_two());
+            let result = match term {
+                ConstraintTerm::Univariate(uni) => {
+                    let t = evaluate_univariate_term_into_values(
+                        uni,
+                        substituted_witness,
+                        evaluated_univariate_terms,
+                        power_hint,
+                        worker,
+                    )?;
+
+                    t
+                }
+                ConstraintTerm::Polyvariate(poly) => {
+                    let mut values_result: Option<Polynomial<F, Values>> = None;
+                    // evaluate subcomponents in a value form and multiply
+                    for uni in poly.terms.iter() {
+                        let t = evaluate_univariate_term_into_values(
+                            uni,
+                            substituted_witness,
+                            evaluated_univariate_terms,
+                            power_hint,
+                            &worker,
+                        )?;
+                        if let Some(res) = values_result.as_mut() {
+                            res.mul_assign(&worker, &t);
+                        } else {
+                            values_result = Some(t);
+                        }
+                    }
+
+                    let mut as_values = values_result.expect("is some");
+                    as_values.scale(&worker, poly.coeff);
+
+                    as_values
+                }
+            };
+
+            Ok(result)
+        }
+
+        // ---------------------
+
+        // returns univariate term evaluated at coset
+        fn evaluate_univariate_term_into_values<F: PrimeField>(
+            uni: &UnivariateTerm<F>,
+            substituted_witness: &IndexMap<MaskProperties<F>, Polynomial<F, Coefficients>>,
+            evaluated_univariate_terms: &mut IndexMap<
+                WitnessEvaluationData<F>,
+                Polynomial<F, Values>,
+            >,
+            power_hint: u64,
+            worker: &Worker,
+        ) -> Result<Polynomial<F, Values>, SynthesisError> {
+            assert!(power_hint.is_power_of_two());
+            let mask_props = MaskProperties::<F> {
+                register: uni.register,
+                steps_difference: uni.steps_difference,
+            };
+            let base = substituted_witness
+                .get(&mask_props)
+                .expect("should exist")
+                .clone();
+            let base_len = base.size() as u64;
+
+            let evaluation_data = WitnessEvaluationData::<F> {
+                mask: mask_props,
+                power: uni.power,
+                total_lde_length: power_hint * base_len,
+            };
+
+            if let Some(e) = evaluated_univariate_terms.get(&evaluation_data) {
+                let mut base = e.clone();
+                let one = F::one();
+                if uni.coeff != one {
+                    let mut minus_one = one;
+                    minus_one.negate();
+                    if uni.coeff == minus_one {
+                        base.negate(&worker);
+                    } else {
+                        base.scale(&worker, uni.coeff);
+                    }
+                }
+                return Ok(base);
+            }
+
+            let factor = power_hint as usize;
+            assert!(factor.is_power_of_two());
+            let mut base = base.coset_lde(&worker, factor)?;
+            // let mut base = base.lde(&worker, factor)?;
+            base.pow(&worker, uni.power);
+
+            evaluated_univariate_terms.insert(evaluation_data, base.clone());
+
+            let one = F::one();
+            if uni.coeff != one {
+                let mut minus_one = one;
+                minus_one.negate();
+                if uni.coeff == minus_one {
+                    base.negate(&worker);
+                } else {
+                    base.scale(&worker, uni.coeff);
+                }
+            }
+
+            Ok(base)
+        }
+
+        let mut evaluated_terms_map: IndexMap<WitnessEvaluationData<F>, Polynomial<F, Values>> =
+            IndexMap::new();
+
+        // now evaluate TF constraints
+        for (density, batch) in self.constraints_batched_by_density.iter() {
+            let mut batch_values = g_values.clone();
+            for c in batch.iter() {
+                let constraint_power = c.degree;
+                assert!(self.max_constraint_power >= constraint_power);
+                let adjustment = self.max_constraint_power - constraint_power;
+                let alpha = transcript.get_challenge();
+                let beta = transcript.get_challenge();
+
+                let adj_poly = if adjustment == 0 {
+                    None
+                } else {
+                    let adj_poly = calculate_adjustment_polynomial_in_coset(
+                        adjustment,
+                        alpha,
+                        beta,
+                        &self.constraints_domain,
+                        &self.precomputations,
+                        &worker,
+                    );
+
+                    Some(adj_poly)
+                };
+
+                let mut constraint_values = g_values.clone();
+                for t in c.terms.iter() {
+                    let subval = evaluate_constraint_term_into_values(
+                        t,
+                        &mask_applied_polynomials,
+                        &mut evaluated_terms_map,
+                        self.max_constraint_power,
+                        &worker,
+                    )?;
+                    constraint_values.add_assign(&worker, &subval);
+                }
+
+                constraint_values.add_constant(&worker, &c.constant_term);
+                if let Some(adj) = adj_poly {
+                    constraint_values.mul_assign(&worker, &adj);
+                } else {
+                    // just apply alpha
+                    constraint_values.scale(&worker, alpha);
+                }
+
+                batch_values.add_assign(&worker, &constraint_values);
+            }
+
+            let divisors = self.constraint_divisors.get(density).expect("is some");
+
+            batch_values.mul_assign(&worker, divisors);
+
+            g_values.add_assign(&worker, &batch_values);
+        }
+
+        let boundary_lde_factor = self.max_constraint_power;
+
+        // now evaluate normal constraints
+        for b_c in self.properties.boundary_constraints.iter() {
+            let alpha = transcript.get_challenge();
+            let beta = transcript.get_challenge();
+            let adjustment = self.max_constraint_power - 1;
+
+            let adj_poly = if adjustment == 0 {
+                None
+            } else {
+                let adj_poly = calculate_adjustment_polynomial_in_coset(
+                    adjustment,
+                    alpha,
+                    beta,
+                    &self.constraints_domain,
+                    &self.precomputations,
+                    &worker,
+                );
+
+                Some(adj_poly)
+            };
+
+            let reg_num = match b_c.register {
+                Register::Register(reg_number) => reg_number,
+                _ => {
+                    unreachable!();
+                }
+            };
+            let mut witness_poly = (&witness[reg_num]).clone();
+            witness_poly.as_mut()[0].sub_assign(&b_c.value.expect("is some"));
+            let mut constraint_values = witness_poly.lde_using_square_root_fft(
+                &worker,
+                boundary_lde_factor as usize,
+                precomputed_twiddle_factors,
+            )?;
+            if let Some(adj) = adj_poly {
+                constraint_values.mul_assign(&worker, &adj);
+            } else {
+                // just apply alpha
+                constraint_values.scale(&worker, alpha);
+            }
+
+            let divisors = self
+                .boundary_constraint_divisors
+                .get(&(b_c.at_row as u64))
+                .expect("is some");
+            constraint_values.mul_assign(&worker, divisors);
+
+            g_values.add_assign(&worker, &constraint_values);
+        }        
+
+        Ok(g_values)
+    }
+
 }
 
 #[test]

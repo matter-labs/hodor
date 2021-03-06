@@ -623,6 +623,7 @@ impl<F: PrimeField> Polynomial<F, Coefficients> {
             for (i, r) in results.chunks_mut(chunk).enumerate() {
                 scope.spawn(move |_| {
                     let mut coset_generator = coset_omega.pow(&[i as u64]);
+                    println!("i {} coeffs len {}", i, r[0].len());
                     for r in r.iter_mut() {
                         if coset_generator != F::one() {
                             distribute_powers_serial(&mut r[..], coset_generator);
@@ -663,6 +664,7 @@ impl<F: PrimeField> Polynomial<F, Coefficients> {
 
         Polynomial::from_values(final_values)
     }
+
     pub fn lde_using_square_root_fft(
         self,
         worker: &Worker,
@@ -718,7 +720,10 @@ impl<F: PrimeField> Polynomial<F, Coefficients> {
                         //     log_n,
                         //     None,
                         // );
-                        crate::fft::strided_fft::non_generic::non_generic_radix_sqrt::<_, 128>(&mut r[..], &this_domain_omega, precomputed_twiddle_factors, &worker);
+                        let size = r.len();
+                        // println!("size {} twiddles {}", size, precomputed_twiddle_factors.len());
+                        // crate::fft::strided_fft::non_generic::non_generic_radix_sqrt::<_, 128>(&mut r[..], &this_domain_omega, precomputed_twiddle_factors, &worker);
+                        crate::fft::strided_fft::non_generic::non_generic_radix_sqrt::<_, 128>(&mut r[..], &this_domain_omega, &precomputed_twiddle_factors, &worker);
                         coset_generator.mul_assign(&coset_omega);
                     }
                 });
@@ -1576,6 +1581,7 @@ impl<F: PrimeField> Polynomial<F, Values> {
     ) -> Polynomial<F, Coefficients> {
         debug_assert!(self.coeffs.len().is_power_of_two());
         // best_fft(&mut self.coeffs, worker, &self.omegainv, self.exp, None);
+        let size = self.coeffs.len(); // TODO
         crate::fft::strided_fft::non_generic::non_generic_radix_sqrt::<_, 128>(&mut self.coeffs, &self.omegainv, precomputed_twiddle_factors, &worker);
 
         worker.scope(self.coeffs.len(), |scope, chunk| {
@@ -2826,5 +2832,22 @@ mod test {
         let expected_values = poly.clone().lde(&worker, lde_factor).expect("some lde");
 
         assert_eq!(expected_values.as_ref(), actual_values.as_ref());
+    }
+
+    #[test]
+    fn test_lde_using_multiple_cosets(){
+        let size: usize = 1 << 4;
+
+        println!("size {} next power of two {}", size, size.next_power_of_two());
+
+        let lde_factor = 4;
+
+        let worker = Worker::new();
+
+        let coeffs = make_random_field_elements::<Fr>(&worker, size);
+
+        let poly = Polynomial::from_coeffs(coeffs).unwrap();
+
+        poly.lde_using_multiple_cosets(&worker, lde_factor).expect("");
     }
 }

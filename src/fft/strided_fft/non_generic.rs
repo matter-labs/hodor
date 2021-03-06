@@ -105,7 +105,8 @@ pub fn non_generic_radix_sqrt<F: PrimeField, const MAX_LOOP_UNROLL: usize>(
     let length = values.len();
 
     let (inner_size, outer_size) = calcualate_inner_and_outer_sizes(length);
-    assert_eq!(precomputed_twiddle_factors.len() * 2, outer_size);
+    // TODO
+    // assert_eq!(precomputed_twiddle_factors.len() * 2, outer_size);
     let stretch = outer_size / inner_size;
 
     debug_assert_eq!(omega.pow(&[values.len() as u64]), F::one());
@@ -262,7 +263,7 @@ mod test {
 
         let log_size  = size.trailing_zeros();
 
-        // assert_eq!(log_size, 10);
+        assert_eq!(log_size, 4);
 
         let domain = Domain::new_for_size(size as u64).expect("a domain");
 
@@ -276,7 +277,6 @@ mod test {
 
         // square root fft is based on a vector of NxN values
         // so we should compute square root of size
-
         let inner_size = 1<<(log_size / 2);
 
         // we have a domain generator which w^(domain_size) = 1
@@ -292,7 +292,7 @@ mod test {
 
         assert_eq!(values, values_for_sqrt);
     }
-    
+
     #[test]
     fn test_roots_of_unity(){
         let generator = Fr::root_of_unity();

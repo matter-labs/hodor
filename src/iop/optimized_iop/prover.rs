@@ -278,13 +278,13 @@ impl<
 
         let g_oracle = I::create(g_bitreversed.as_ref(), g_bitreversed.as_ref().len());
 
-        let g_poly = g_bitreversed.clone().icoset_fft_for_generator(&self.worker, &coset_factor);
+        let g_poly = g_bitreversed
+            .clone()
+            .icoset_fft_for_generator(&self.worker, &coset_factor);
 
         // let g_lde = g_poly_interpolant
         //     .clone()
         //     .lde(&self.worker, self.lde_factor)?;
-
-        
 
         let g_iop_root = g_oracle.get_root();
         transcript.commit_bytes(g_iop_root.as_ref());
@@ -358,7 +358,160 @@ impl<
             length_of_single_lde,
         );
 
-        let g_query = g_oracle.query(x_challenge_index_h2, g_bitreversed.as_ref(), g_bitreversed.as_ref().len());
+        let g_query = g_oracle.query(
+            x_challenge_index_h2,
+            g_bitreversed.as_ref(),
+            g_bitreversed.as_ref().len(),
+        );
+
+        let proof = InstanceProof::<F, T, I, P, PR, FRI, PerRegisterARP> {
+            f_at_z_m: f_at_z_m,
+            f_iop_root: root_of_combined_tree,
+            g_iop_root: g_iop_root,
+
+            f_query: combined_f_query,
+            g_query: g_query,
+
+            h1_iop_roots: h1_iop_roots,
+            h2_iop_roots: h2_iop_roots,
+
+            fri_proof_h1: h1_fri_proof,
+            fri_proof_h2: h2_fri_proof,
+
+            _marker_a: std::marker::PhantomData,
+            _marker_t: std::marker::PhantomData,
+            _marker_p: std::marker::PhantomData,
+            _marker_fri: std::marker::PhantomData,
+        };
+
+        Ok(proof)
+    }
+    pub fn prove_with_square_root_fft(
+        &self,
+        witness: Vec<Vec<F>>,
+        precomputed_twiddle_factors: &Vec<F>,
+    ) -> Result<InstanceProof<F, T, I, P, PR, FRI, PerRegisterARP>, SynthesisError> {
+        let mut transcript = T::new();
+
+        let witness_polys = self.arp.calculate_witness_polys(witness, &self.worker)?;
+
+        let mut f_ldes = Vec::with_capacity(witness_polys.len());
+        let coset_factor = F::multiplicative_generator();
+
+        for w in witness_polys.iter() {
+            let f_lde = w.clone().lde_using_square_root_fft(
+                &self.worker,
+                self.lde_factor,
+                precomputed_twiddle_factors,
+            )?;
+            f_ldes.push(f_lde);
+        }
+
+        let number_of_ldes = f_ldes.len();
+        let length_of_single_lde = f_ldes[0].as_ref().len();
+
+        let mut combined_lde = vec![];
+        for lde in f_ldes.iter() {
+            combined_lde.extend_from_slice(lde.as_ref());
+        }
+
+        assert_eq!(combined_lde.len(), number_of_ldes * length_of_single_lde);
+
+        let single_oracle_from_multiple_lde = I::create(&combined_lde, length_of_single_lde);
+        let root_of_combined_tree = single_oracle_from_multiple_lde.get_root();
+        transcript.commit_bytes(&root_of_combined_tree.as_ref());
+
+        let g_bitreversed = self.ali.calculate_g_with_square_root_fft(
+            &mut transcript,
+            witness_polys.clone(),
+            &self.worker,
+            precomputed_twiddle_factors,
+        )?;
+
+        let g_oracle = I::create(g_bitreversed.as_ref(), g_bitreversed.as_ref().len());
+
+        let g_poly = g_bitreversed
+            .clone()
+            .icoset_fft_for_generator_with_square_root_fft(
+                &self.worker,
+                &coset_factor,
+                precomputed_twiddle_factors,
+            );
+
+        let g_iop_root = g_oracle.get_root();
+        transcript.commit_bytes(g_iop_root.as_ref());
+
+
+        let (h1_lde, h2_lde, f_at_z_m, _g_at_z) = self.ali.calculate_deep(
+            &witness_polys,
+            &f_ldes,
+            &g_poly,
+            &g_bitreversed,
+            &mut transcript,
+            &self.worker,
+        )?;
+
+        let fri_final_poly_degree = self.fri_final_degree_plus_one;
+
+        let h1_fri_proof_proto = FRI::proof_from_lde(
+            &h1_lde,
+            self.lde_factor,
+            fri_final_poly_degree,
+            &self.worker,
+        )?;
+
+        let h2_fri_proof_proto = FRI::proof_from_lde(
+            &h2_lde,
+            self.lde_factor,
+            fri_final_poly_degree,
+            &self.worker,
+        )?;
+
+        let h1_iop_roots = h1_fri_proof_proto.get_roots();
+        let h2_iop_roots = h2_fri_proof_proto.get_roots();
+
+        // TODO: we can also potentially commit intermediate roots
+
+        transcript.commit_bytes(&h1_fri_proof_proto.get_final_root().as_ref());
+        for el in h1_fri_proof_proto.get_final_coefficients().into_iter() {
+            transcript.commit_field_element(&el);
+        }
+        transcript.commit_bytes(&h2_fri_proof_proto.get_final_root().as_ref());
+        for el in h2_fri_proof_proto.get_final_coefficients().into_iter() {
+            transcript.commit_field_element(&el);
+        }
+
+        let x_challenge_index_h1 =
+            Verifier::<F, T, I, P, PR, FRI, PerRegisterARP>::bytes_to_challenge_index(
+                &transcript.get_challenge_bytes(),
+                h1_lde.size(),
+                self.lde_factor,
+            );
+
+        let x_challenge_index_h2 =
+            Verifier::<F, T, I, P, PR, FRI, PerRegisterARP>::bytes_to_challenge_index(
+                &transcript.get_challenge_bytes(),
+                h2_lde.size(),
+                self.lde_factor,
+            );
+
+        let h1_fri_proof =
+            FRI::prototype_into_proof(h1_fri_proof_proto, &h1_lde, x_challenge_index_h1)?;
+
+        let h2_fri_proof =
+            FRI::prototype_into_proof(h2_fri_proof_proto, &h2_lde, x_challenge_index_h2)?;
+
+        let combined_f_query = single_oracle_from_multiple_lde.query(
+            x_challenge_index_h1,
+            &combined_lde,
+            length_of_single_lde,
+        );
+
+        let g_query = g_oracle.query(
+            x_challenge_index_h2,
+            g_bitreversed.as_ref(),
+            g_bitreversed.as_ref().len(),
+        );
 
         let proof = InstanceProof::<F, T, I, P, PR, FRI, PerRegisterARP> {
             f_at_z_m: f_at_z_m,

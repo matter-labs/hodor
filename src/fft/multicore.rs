@@ -23,7 +23,7 @@ impl Worker {
     // We don't expose this outside the library so that
     // all `Worker` instances have the same number of
     // CPUs configured.
-    pub(crate) fn new_with_cpus(cpus: usize) -> Worker {
+    pub fn new_with_cpus(cpus: usize) -> Worker {
         Worker {
             cpus: cpus,
             pool: CpuPool::new(cpus)

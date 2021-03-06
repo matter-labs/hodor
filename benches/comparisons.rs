@@ -237,17 +237,17 @@ impl MatterBencher {
             b.iter(|| transpose_square_with_chunks::<_, 2>(&mut matrix, dim))
         });
 
-        group.bench_function(format!("matter-with-chunks-4x4-dim-{}", dim), |b| {
-            b.iter(|| transpose_square_with_chunks::<_, 4>(&mut matrix, dim))
-        });
+        // group.bench_function(format!("matter-with-chunks-4x4-dim-{}", dim), |b| {
+        //     b.iter(|| transpose_square_with_chunks::<_, 4>(&mut matrix, dim))
+        // });
 
         group.bench_function(format!("matter-with-tiles-2x2-dim-{}", dim), |b| {
             b.iter(|| transpose_square_with_square_tiles::<_, 2>(&mut matrix, dim))
         });
 
-        group.bench_function(format!("matter-with-tiles-4x4-dim-{}", dim), |b| {
-            b.iter(|| transpose_square_with_square_tiles::<_, 4>(&mut matrix, dim))
-        });
+        // group.bench_function(format!("matter-with-tiles-4x4-dim-{}", dim), |b| {
+        //     b.iter(|| transpose_square_with_square_tiles::<_, 4>(&mut matrix, dim))
+        // });
     }
 
     fn bench_non_generic_radix_sqrt_fft<F: PrimeField, const LOOP_UNROLL: usize>(
@@ -396,7 +396,7 @@ fn compare_fft_butterfly_with_twiddles(crit: &mut Criterion) {
 }
 
 fn compare_matrix_transposition(crit: &mut Criterion, range: &std::ops::Range<usize>) {
-    let (mut group, mut rng) = bench_init(crit, "Matrix Transposition".to_string());
+    let (mut group, mut rng) = bench_init(crit, "nxn Matrix Transposition".to_string());
 
     for size in range.clone().step_by(2) {
         let dim = 1 << (size / 2);
@@ -495,7 +495,12 @@ fn compare_square_root_fft_with_best_fft(crit: &mut Criterion, range: std::ops::
         let mut values_for_square_root = values.clone();
         group.bench_function(id, |b| {
             b.iter(|| {
-                non_generic_radix_sqrt::<_, LOOP_UNROLL>(&mut values_for_square_root, &omega, &twiddles, &worker)
+                non_generic_radix_sqrt::<_, LOOP_UNROLL>(
+                    &mut values_for_square_root,
+                    &omega,
+                    &twiddles,
+                    &worker,
+                )
             });
         });
 
@@ -515,11 +520,11 @@ pub fn group(crit: &mut Criterion) {
     // compare_ef_fr_multiplication(crit);
     //     compare_fft_butterfly(crit);
     //     compare_fft_butterfly_with_twiddles(crit);
-    //     let matrix_range = 16..24;
-    //     compare_matrix_transposition(crit, &matrix_range);
-    let fft_range = 8..12;
+    let matrix_range = 16..24;
+    compare_matrix_transposition(crit, &matrix_range);
+    // let fft_range = 8..12;
     // compare_fft_by_unroll_params(crit, &fft_range);
     // compare_fft_by_fields_different_bits(crit, &fft_range);
     //     compare_fft_by_scalar_fields(crit, &fft_range);
-    compare_square_root_fft_with_best_fft(crit, fft_range);
+    // compare_square_root_fft_with_best_fft(crit, fft_range);
 }
