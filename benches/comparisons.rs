@@ -1,13 +1,14 @@
+use core::num;
 use std::convert::TryInto;
 
 use criterion::{
     measurement::{Measurement, WallTime},
     AxisScale, Bencher, BenchmarkGroup, BenchmarkId, Criterion, PlotConfiguration, Throughput,
 };
-use hodor::optimized_fields::f252::Fr as FrAsm;
 use hodor::optimized_fields::f252_asm_generated::Fr as FrAsmG;
 use hodor::optimized_fields::naive_f125 as Fr125Naive;
 use hodor::{fft::fft::best_fft, optimized_fields::f125::Fr as Fr125Asm};
+use hodor::{fft::strided_fft::non_generic, optimized_fields::f252::Fr as FrAsm};
 
 use hodor::{
     domains::Domain,
@@ -514,14 +515,217 @@ fn compare_square_root_fft_with_best_fft(crit: &mut Criterion, range: std::ops::
     }
 }
 
+fn bench_non_generic_radix_sqrt_fft_with_different_cpus(crit: &mut Criterion) {
+    let mut group = crit.benchmark_group("Square root fft with CPUs");
+    for num_cpu in (8..50).step_by(2) {
+        MatterBencher::bench_non_generic_radix_sqrt_fft::<FrAsm, 128>(
+            &mut group,
+            1 << 22,
+            &Worker::new_with_cpus(num_cpu),
+        );
+    }
+}
+
+fn bench_fft_with_custom_num_threads(crit: &mut Criterion, log_size: usize) {
+    use rayon::ThreadPoolBuilder;
+
+    let mut group = crit.benchmark_group(format!("FFT(2^{}) Comparison by Num CPUs", log_size));
+    let new_config = PlotConfiguration::default().summary_scale(AxisScale::Linear);
+    // let new_config = PlotConfiguration::default().summary_scale(AxisScale::Logarithmic);
+    group.plot_config(new_config);
+
+    let size = 1 << log_size;
+
+    let mut values_o = OpenZkpBencher::generate_fft_values(size);
+    let omega_o = OpenZkpBencher::compute_omega();
+
+    type F = FrAsm;
+    let (omega_m, twiddles, mut values_m): (F, Vec<F>, Vec<F>) =
+        MatterBencher::generate_values(size);
+    for num_threads in vec![2, 4, 8, 16, 24, 32, 48] {
+        let pool = ThreadPoolBuilder::new()
+            .num_threads(num_threads)
+            .build()
+            .expect("some pool");
+
+        group.bench_function(
+            BenchmarkId::new(format!("openzkp-size-{}-unroll-128", size), num_threads),
+            |b| {
+                b.iter(|| {
+                    pool.install(|| radix_sqrt_with_unroll::<_, 128>(&mut values_o, &omega_o));
+                })
+            },
+        );
+
+        let worker = Worker::new_with_cpus(num_threads);
+        group.bench_function(
+            BenchmarkId::new(format!("matter-size-{}-unroll-128", size), num_threads),
+            |b| {
+                b.iter(|| {
+                    non_generic_radix_sqrt::<_, 128>(&mut values_m, &omega_m, &twiddles, &worker)
+                });
+            },
+        );
+
+        group.bench_function(
+            BenchmarkId::new(format!("best-fft-{}", size), num_threads),
+            |b| {
+                b.iter(|| {
+                    best_fft(&mut values_m, &worker, &omega_m, log_size as u32, None);
+                });
+            },
+        );
+    }
+}
+
+fn compare_matrix_transposition_with_custom_num_threads(crit: &mut Criterion) {
+    use rayon::ThreadPoolBuilder;
+
+    let mut group = crit.benchmark_group("Matrix Transposition Comparison by Num CPUs");
+    let new_config = PlotConfiguration::default().summary_scale(AxisScale::Linear);
+    group.plot_config(new_config);
+
+    let log_sizes = vec![4, 8];
+    // let log_sizes = vec![22, 24, 26];
+    for log_size in log_sizes {
+        let dim = 1 << (log_size / 2);
+
+        let size = 1 << log_size;
+
+        let mut values_o = OpenZkpBencher::generate_fft_values(size);
+        let omega_o = OpenZkpBencher::compute_omega();
+
+        type F = FrAsm;
+        let (omega_m, twiddles, mut values_m): (F, Vec<F>, Vec<F>) =
+            MatterBencher::generate_values(size);
+        // for num_threads in vec![2, 4, 8, 16, 24, 32, 48] {
+        for num_threads in vec![2, 4] {
+            let pool = ThreadPoolBuilder::new()
+                .num_threads(num_threads)
+                .build()
+                .expect("some pool");
+
+            group.bench_function(
+                BenchmarkId::new(format!("openzkp-size-{}", size), num_threads),
+                |b| {
+                    b.iter(|| {
+                        pool.install(|| transpose_square_openzkp(&mut values_o, dim));
+                    })
+                },
+            );
+
+            // let worker = Worker::new_with_cpus(num_threads);
+            group.bench_function(
+                BenchmarkId::new(format!("matter-size-{}", size), num_threads),
+                |b| {
+                    b.iter(|| {
+                        transpose_square(&mut values_m, dim);
+                    });
+                },
+            );
+
+            group.bench_function(
+                BenchmarkId::new(format!("matter-with-tiles-size-{}", size), num_threads),
+                |b| {
+                    b.iter(|| {
+                        transpose_square_with_square_tiles::<_, 2>(&mut values_m, dim);
+                    });
+                },
+            );
+
+            group.bench_function(
+                BenchmarkId::new(format!("matter-with-chunks-fft-{}", size), num_threads),
+                |b| {
+                    b.iter(|| {
+                        transpose_square_with_chunks::<_, 2>(&mut values_m, dim);
+                    });
+                },
+            );
+        }
+    }
+}
+
+fn bench_two_simultaneous_fft_with_custom_num_threads(crit: &mut Criterion, log_size: usize) {
+    let size = 1 << log_size;
+
+    let mut group = crit.benchmark_group(format!("Simultaneous FFT(1<<{}) by CPUs", log_size));
+    let new_config = PlotConfiguration::default().summary_scale(AxisScale::Logarithmic);
+    group.plot_config(new_config);
+
+    fn run_simultaneous_fft_for_matter<F: PrimeField>(
+        first_values: &mut [F],
+        second_values: &mut [F],
+        omega: &F,
+        twiddles: &[F],
+        worker: &Worker,
+        total_num_cpus: usize,
+    ) {
+        let half_num_cpus = total_num_cpus / 2;
+
+        worker.scope(2, |scope, num_chunks| {
+            assert_eq!(num_chunks, 1);
+            let inner_worker1 = Worker::new_with_cpus(half_num_cpus);
+            scope.spawn(move |_| {
+                non_generic_radix_sqrt::<_, 128>(first_values, &omega, &twiddles, &inner_worker1);
+            });
+            let inner_worker2 = Worker::new_with_cpus(half_num_cpus);
+            scope.spawn(move |_| {
+                non_generic_radix_sqrt::<_, 128>(second_values, &omega, &twiddles, &inner_worker2);
+            });
+        });
+    }
+
+    for num_cpus in vec![8, 16, 24, 32, 48] {
+        type F = FrAsm;
+        let (omega_m, twiddles, values_m): (F, Vec<F>, Vec<F>) =
+            MatterBencher::generate_values(size);
+
+        let mut first_values = values_m.clone();
+        let mut second_values = values_m.clone();
+
+        group.bench_function(BenchmarkId::new("matter-simultaneous", num_cpus), |b| {
+            let worker_for_matter = Worker::new();
+            b.iter(|| {
+                run_simultaneous_fft_for_matter(
+                    &mut first_values,
+                    &mut second_values,
+                    &omega_m,
+                    &twiddles,
+                    &worker_for_matter,
+                    num_cpus,
+                );
+            });
+
+            assert_eq!(first_values, second_values);
+            assert_ne!(values_m, first_values);
+        });
+
+        let worker = Worker::new();
+        group.bench_function(BenchmarkId::new("matter", num_cpus), |b| {
+            b.iter(|| {
+                non_generic_radix_sqrt::<_, 128>(&mut first_values, &omega_m, &twiddles, &worker)
+            });
+        });
+    }
+}
+
 pub fn group(crit: &mut Criterion) {
     // compare_mac(crit);
     // compare_proth_fr_multiplication(crit);
     // compare_ef_fr_multiplication(crit);
     //     compare_fft_butterfly(crit);
     //     compare_fft_butterfly_with_twiddles(crit);
-    let matrix_range = 16..24;
-    compare_matrix_transposition(crit, &matrix_range);
+    // let matrix_range = 16..24;
+    // compare_matrix_transposition(crit, &matrix_range);
+    // for log_size in vec![22, 24, 26]{
+    //     bench_fft_with_custom_num_threads(crit, log_size);
+    // }
+    for log_size in vec![22, 24, 26] {
+        bench_two_simultaneous_fft_with_custom_num_threads(crit, log_size);
+    }
+
+    // compare_matrix_transposition_with_custom_num_threads(crit);
+    // bench_two_simultaneous_fft_with_custom_num_threads(crit);
     // let fft_range = 8..12;
     // compare_fft_by_unroll_params(crit, &fft_range);
     // compare_fft_by_fields_different_bits(crit, &fft_range);

@@ -33,7 +33,9 @@ objekt = "0.1"
 [dev-dependencies]
 criterion = "0.3"
 criterion_convenience = {path = "./tools/criterion_convenience"}
-openzkp_primefield = {package = "zkp-primefield", path = "/Users/bizir/dev/0xProject/OpenZKP/algebra/primefield", features = ["asm"]}
+openzkp_primefield = {package = "zkp-primefield", git = "https://github.com/saitima/OpenZKP", branch = "comparison", features = ["asm"]}
+# num_cpus = "1."
+rayon = "1.0.3"
 
 [[bench]]
 name = "benchmarks"
