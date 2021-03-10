@@ -645,68 +645,80 @@ fn compare_matrix_transposition_with_custom_num_threads(crit: &mut Criterion) {
     }
 }
 
-fn bench_two_simultaneous_fft_with_custom_num_threads(crit: &mut Criterion, log_size: usize) {
-    let size = 1 << log_size;
+fn bench_simultaneous_fft_with_num_threads(
+    crit: &mut Criterion,
+    fft_log_size: usize,
+    number_of_simulataneous_fft: usize,
+) {
+    let size = 1 << fft_log_size;
 
-    let mut group = crit.benchmark_group(format!("Simultaneous FFT(1<<{}) by CPUs", log_size));
+    let mut group = crit.benchmark_group(format!(
+        "{} Simultaneous FFT(1<<{}) by CPUs",
+        number_of_simulataneous_fft, fft_log_size
+    ));
+
     let new_config = PlotConfiguration::default().summary_scale(AxisScale::Logarithmic);
     group.plot_config(new_config);
 
-    fn run_simultaneous_fft_for_matter<F: PrimeField>(
-        first_values: &mut [F],
-        second_values: &mut [F],
-        omega: &F,
-        twiddles: &[F],
-        worker: &Worker,
-        total_num_cpus: usize,
-    ) {
-        let half_num_cpus = total_num_cpus / 2;
+    type F = FrAsm;
+    let (omega_m, twiddles, values_m): (F, Vec<F>, Vec<F>) = MatterBencher::generate_values(size);
+    let worker = Worker::new();
 
-        worker.scope(2, |scope, num_chunks| {
-            assert_eq!(num_chunks, 1);
-            let inner_worker1 = Worker::new_with_cpus(half_num_cpus);
-            scope.spawn(move |_| {
-                non_generic_radix_sqrt::<_, 128>(first_values, &omega, &twiddles, &inner_worker1);
-            });
-            let inner_worker2 = Worker::new_with_cpus(half_num_cpus);
-            scope.spawn(move |_| {
-                non_generic_radix_sqrt::<_, 128>(second_values, &omega, &twiddles, &inner_worker2);
-            });
-        });
-    }
+    let mut values = values_m.clone();
+    values.extend_from_slice(&values_m);
+    values.extend_from_slice(&values_m);
+    values.extend_from_slice(&values_m);
 
-    for num_cpus in vec![8, 16, 24, 32, 48] {
-        type F = FrAsm;
-        let (omega_m, twiddles, values_m): (F, Vec<F>, Vec<F>) =
-            MatterBencher::generate_values(size);
-
-        let mut first_values = values_m.clone();
-        let mut second_values = values_m.clone();
-
-        group.bench_function(BenchmarkId::new("matter-simultaneous", num_cpus), |b| {
-            let worker_for_matter = Worker::new();
+    // for num_cpus in vec![6,24,48] {
+    for num_cpus in vec![4, 8, 16, 24, 32, 48] {
+        if num_cpus < number_of_simulataneous_fft || num_cpus % number_of_simulataneous_fft != 0 {
+            continue;
+        }
+        group.bench_function(BenchmarkId::new("sqrt-simultaneous-fft", format!("{}-cpu",num_cpus)), |b| {
             b.iter(|| {
-                run_simultaneous_fft_for_matter(
-                    &mut first_values,
-                    &mut second_values,
+                run_simultaneous_fft(
+                    &mut values,
                     &omega_m,
                     &twiddles,
-                    &worker_for_matter,
+                    &worker,
                     num_cpus,
+                    number_of_simulataneous_fft,
                 );
-            });
-
-            assert_eq!(first_values, second_values);
-            assert_ne!(values_m, first_values);
-        });
-
-        let worker = Worker::new();
-        group.bench_function(BenchmarkId::new("matter", num_cpus), |b| {
-            b.iter(|| {
-                non_generic_radix_sqrt::<_, 128>(&mut first_values, &omega_m, &twiddles, &worker)
             });
         });
     }
+}
+
+fn run_simultaneous_fft<F: PrimeField>(
+    values: &mut [F],
+    omega: &F,
+    twiddles: &[F],
+    worker: &Worker,
+    total_num_cpus: usize,
+    number_of_simulataneous_fft: usize,
+) {
+    let cpu_per_fft = total_num_cpus / number_of_simulataneous_fft;
+
+    let number_of_values_per_fft = values.len() / number_of_simulataneous_fft;
+
+    let mut values_ref = values.as_mut();
+
+    worker.scope(0, |scope, _| {
+        for _ in 0..number_of_simulataneous_fft {
+            let inner_worker = Worker::new_with_cpus(cpu_per_fft);
+            let (values_for_thread, rest) = values_ref.split_at_mut(number_of_values_per_fft);
+            values_ref = rest;
+            scope.spawn(move |_| {
+                assert_eq!(values_for_thread.len(), number_of_values_per_fft);
+                non_generic_radix_sqrt::<_, 128>(
+                    values_for_thread,
+                    &omega,
+                    &twiddles,
+                    &inner_worker,
+                );
+            });
+        }
+    });
 }
 
 pub fn group(crit: &mut Criterion) {
@@ -720,8 +732,11 @@ pub fn group(crit: &mut Criterion) {
     // for log_size in vec![22, 24, 26]{
     //     bench_fft_with_custom_num_threads(crit, log_size);
     // }
-    for log_size in vec![22, 24, 26] {
-        bench_two_simultaneous_fft_with_custom_num_threads(crit, log_size);
+    // for log_size in vec![22, 24, 26] {
+    for log_size in vec![22] {
+        for num_fft in (2..=48).step_by(2) {
+            bench_simultaneous_fft_with_num_threads(crit, log_size, num_fft);
+        }
     }
 
     // compare_matrix_transposition_with_custom_num_threads(crit);
