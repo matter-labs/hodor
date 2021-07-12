@@ -191,7 +191,7 @@ pub fn non_generic_radix_sqrt<F: PrimeField, const MAX_LOOP_UNROLL: usize>(
                     for (i, s) in subwork.chunks_mut(outer_size).enumerate() {
                         let idx = start + i;
                         if idx > 0 {
-                            let i = bitreverse_index(inner_size, i);
+                            let i = bitreverse_index(inner_size, idx);
                             let inner_twiddle = omega.pow(&[i as u64]);
                             let mut outer_twiddle = inner_twiddle;
                             for element in s.iter_mut().skip(1) {
